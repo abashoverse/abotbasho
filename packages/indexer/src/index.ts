@@ -116,11 +116,12 @@ const handleWrap = async (args: EventArgs, kind: "wrap" | "unwrap") => {
 };
 
 // Ponder's `ponder.on` is typed against the contract names declared in
-// ponder.config.ts. Because we register names dynamically from the project
-// config, we cast `ponder.on` to a permissive signature. Runtime behaviour is
-// unchanged.
+// ponder.config.ts. We register names dynamically from the project config,
+// so cast to a permissive signature. The `.bind(ponder)` is required because
+// `ponder.on` reads `this.fns` internally; extracting it without binding
+// detaches `this` and crashes at runtime.
 type AnyHandler = (args: EventArgs) => Promise<void>;
-const on = ponder.on as unknown as (event: string, handler: AnyHandler) => void;
+const on = ponder.on.bind(ponder) as unknown as (event: string, handler: AnyHandler) => void;
 
 on(`${cfg.primary.label}:Transfer`, async (args) => {
   await handleTransfer(args, cfg.primary.label, cfg.primary.address);
