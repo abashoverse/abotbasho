@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+.ponder
+**/.ponder
+dist
+**/dist
+.env
+.env.local
+.git
+.gitignore
+*.log
+packages/discord/data
+packages/twitter/data

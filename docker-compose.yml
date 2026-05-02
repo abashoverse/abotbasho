@@ -1,0 +1,74 @@
+services:
+  indexer-db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-ponder}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-ponder}
+      - POSTGRES_DB=${POSTGRES_DB:-abotbasho}
+    volumes:
+      - indexer-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ponder} -d ${POSTGRES_DB:-abotbasho}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  indexer:
+    build: .
+    image: abotbasho:latest
+    command: bun --filter '@abotbasho/indexer' start
+    env_file: .env
+    environment:
+      - DATABASE_SCHEMA=${POSTGRES_DB:-abotbasho}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ponder}:${POSTGRES_PASSWORD:-ponder}@indexer-db:5432/${POSTGRES_DB:-abotbasho}
+    depends_on:
+      indexer-db:
+        condition: service_healthy
+    volumes:
+      - indexer-data:/app/packages/indexer/.ponder
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:42069/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+  discord:
+    build: .
+    image: abotbasho:latest
+    command: bun --filter '@abotbasho/discord' start
+    env_file: .env
+    environment:
+      - INDEXER_SQL_URL=http://indexer:42069/sql
+      - CURSOR_FILE=/data/cursor.json
+      - DISCORD_CONFIG_FILE=/data/config.json
+      - DISCORD_DATA_DIR=/data
+    volumes:
+      - discord-data:/data
+    depends_on:
+      indexer:
+        condition: service_healthy
+    restart: unless-stopped
+
+  twitter:
+    build: .
+    image: abotbasho:latest
+    command: bun --filter '@abotbasho/twitter' start
+    env_file: .env
+    environment:
+      - INDEXER_SQL_URL=http://indexer:42069/sql
+      - CURSOR_FILE=/data/cursor.json
+    volumes:
+      - twitter-data:/data
+    depends_on:
+      indexer:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  indexer-db-data:
+  indexer-data:
+  discord-data:
+  twitter-data:

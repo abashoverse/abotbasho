@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+*.log
+
+# Ponder
+.ponder/
+generated/
+
+# Bot cursors / runtime data
+packages/discord/data/
+packages/twitter/data/
+
+# Per-deployment config (copy abotbasho.config.example.ts and edit)
+abotbasho.config.ts
