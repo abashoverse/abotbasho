@@ -53,7 +53,7 @@ Plugin-owned env vars: `DISCORD_SALES_CHANNEL_ID` (events), `DISCORD_WRAPS_CHANN
 | Command | Who | Plugin | Effect |
 | --- | --- | --- | --- |
 | `/recent [type] [count]` | everyone | events | Show recent events as embeds. `type` choices come from registered handlers (`all`, `sales`, plus `wraps`/`unwraps` when the wrapper plugin is active). `count` is 1-10. |
-| `/view <id>` | everyone | tokens | Image, owner, opensea link. `id` bounds come from `primary.totalSupply` if set. |
+| `/view <id>` | everyone | tokens | Image, owner, opensea link. `id` bounds come from `primary.totalSupply` if set. When `wrapper` is configured and the token is currently wrapped, also shows wrap status and holding duration. |
 | `/wrapped <id>` | everyone | wrapper | Wrap status, holding duration, owner. Only registered when `abotbasho.config.ts` has a `wrapper`. |
 | `/config view` | admin (Manage Server) | config | Show the current effective configuration. Lists message kinds and channel slots contributed by every active plugin. |
 | `/config message <type> [text]` | admin | config | Set or clear a custom message. `type` choices come from registered message kinds (`sale`, plus `wrap`/`unwrap` when the wrapper plugin is active). Persists to `data/config.json`. |
@@ -156,7 +156,7 @@ The indexer-side wrapper handling stays config-driven (Ponder requires static co
 
 #### `tokens`
 
-Token info commands. Provides `/view <id>` (image, owner, opensea link). Reads `primary.totalSupply` from `abotbasho.config.ts` to set the `id` option's upper bound.
+Token info commands. Provides `/view <id>` (image, owner, opensea link). Reads `primary.totalSupply` from `abotbasho.config.ts` to set the `id` option's upper bound. When `wrapper` is configured, `/view` also queries the indexer's `/api/holding` endpoint and adds wrap status + holding duration for currently-wrapped tokens.
 
 No plugin-specific config; no channel slots, no message kinds, no event handlers. Drop this plugin from `registry.ts` if you don't want a token viewer.
 

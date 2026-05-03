@@ -53,7 +53,7 @@ Ponder auto-reloads handler changes. The local dev mode uses PGLite, so no separ
 | --- | --- |
 | `GET /api/events?since=<cursor>&limit=<n>` | Returns `{ sales, wraps }` arrays of events with `cursor > since`. Bots use this to poll. `limit` defaults to 50, capped at 200. |
 | `GET /api/recent?type=<all\|sales\|wraps\|unwraps>&limit=<n>` | Reverse chronological. Used by `/recent` in Discord. `limit` defaults to 5, capped at 50. |
-| `GET /api/holding?tokenId=<id>` | Returns the wrapper holding row for a token, or `{ holding: null }`. Used by `/wrapped` in Discord. |
+| `GET /api/holding?tokenId=<id>` | Returns the wrapper holding row for a token, or `{ holding: null }`. Used by `/wrapped` and (when a wrapper is configured) `/view` in Discord. |
 | `GET /sql/*` | Ponder's built-in SQL-over-HTTP endpoint. Bots talk to the indexer through `INDEXER_SQL_URL` derived from this. |
 
 ## Schema

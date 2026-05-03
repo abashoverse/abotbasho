@@ -8,6 +8,7 @@ import {
   displayNameOf,
   etherscanAddr,
   fetchTokenImage,
+  formatDuration,
   getProjectConfig,
   openseaToken,
   shortAddr,
@@ -16,7 +17,33 @@ import {
 import type { Address } from "viem";
 import { env } from "../../../env.js";
 
-const VIEW_COLOR = 0xb56b3a;
+const BASIC_COLOR = 0xb56b3a;
+const WRAPPED_COLOR = 0x5865f2;
+
+interface IndexerHolding {
+  owner: Address;
+  holdingSince: bigint;
+}
+
+const fetchIndexerHolding = async (
+  tokenId: bigint,
+): Promise<IndexerHolding | null> => {
+  try {
+    const url = `${env.INDEXER_API_URL}/api/holding?tokenId=${tokenId.toString()}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      holding: { owner: string; holdingSince: string } | null;
+    };
+    if (!data.holding) return null;
+    return {
+      owner: data.holding.owner as Address,
+      holdingSince: BigInt(data.holding.holdingSince),
+    };
+  } catch {
+    return null;
+  }
+};
 
 const buildData = () => {
   const cfg = getProjectConfig();
@@ -45,14 +72,24 @@ export const view = {
     const tokenId = BigInt(id);
     const displayName = displayNameOf(cfg.primary);
 
+    const wrapped = cfg.wrapper ? await fetchIndexerHolding(tokenId) : null;
+
     let owner: Address;
-    try {
-      owner = await tokenOwner(env.MAINNET_RPC_URL, cfg.primary.address, tokenId);
-    } catch {
-      await interaction.editReply(
-        `${displayName} #${id} doesn't exist or couldn't be loaded.`,
-      );
-      return;
+    if (wrapped) {
+      owner = wrapped.owner;
+    } else {
+      try {
+        owner = await tokenOwner(
+          env.MAINNET_RPC_URL,
+          cfg.primary.address,
+          tokenId,
+        );
+      } catch {
+        await interaction.editReply(
+          `${displayName} #${id} doesn't exist or couldn't be loaded.`,
+        );
+        return;
+      }
     }
 
     const [ownerName, image] = await Promise.all([
@@ -61,14 +98,24 @@ export const view = {
     ]);
 
     const embed = new EmbedBuilder()
-      .setColor(VIEW_COLOR)
-      .setTitle(`${displayName} #${id}`)
+      .setColor(wrapped ? WRAPPED_COLOR : BASIC_COLOR)
+      .setTitle(wrapped ? `${displayName} #${id} | wrapped` : `${displayName} #${id}`)
       .setURL(openseaToken(cfg.primary.address, tokenId))
       .addFields({
         name: "Owner",
         value: `[${ownerName}](${etherscanAddr(owner)})`,
         inline: true,
       });
+
+    if (wrapped) {
+      const heldFor =
+        BigInt(Math.floor(Date.now() / 1000)) - wrapped.holdingSince;
+      embed.addFields({
+        name: "Held for",
+        value: formatDuration(heldFor < 0n ? 0n : heldFor),
+        inline: true,
+      });
+    }
 
     if (image) embed.setImage(image);
 
