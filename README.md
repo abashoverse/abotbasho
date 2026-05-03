@@ -4,6 +4,8 @@ A self-hosted Discord and Twitter/X bot that posts NFT sales (and optional wrap/
 
 Sales are decoded directly from `OrderFulfilled` (Seaport) and `Execution721Packed` / `Execution721TakerFeePacked` (Blur Exchange v2). No third-party API key, no rate limits, no webhook scraping.
 
+Background and motivation: [Self-hosted NFT sales bot (2026)](https://blog.abashoverse.com/posts/self-hosted-nft-sales-bot-2026).
+
 > **Chain support:** Ethereum mainnet only out of the box. Adapting to another EVM chain (Base, Polygon, Arbitrum, etc.) takes a handful of coordinated edits in the indexer config, shared chain helpers, and explorer URL builders. See [packages/indexer/README.md → Adding a chain](./packages/indexer/README.md#adding-a-chain).
 
 ## Contents
