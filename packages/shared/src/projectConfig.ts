@@ -30,6 +30,22 @@ export interface ProjectMessages {
   unwrap?: string;
 }
 
+export interface VerifyConfig {
+  enabled: boolean;
+  /** Discord role granted to verified holders. */
+  roleId: string;
+  /** Public-facing URL of the verify-web service (e.g. https://verify.example.xyz). */
+  publicUrl: string;
+  /** Discord role-event poll cadence. Default 5000. */
+  pollIntervalMs?: number;
+  /** Allow delegate.cash hot/cold delegation alongside SIWE. Default true. */
+  delegateCash?: boolean;
+  /** OpenSea bio fallback flow. Default false; auto-noop unless OPENSEA_API_KEY is set. */
+  openseaBio?: boolean;
+  /** OpenSea collection slug; required when openseaBio=true. */
+  openseaSlug?: string;
+}
+
 export interface AbotbashoConfig {
   project: ProjectMeta;
   primary: PrimaryContract;
@@ -44,6 +60,11 @@ export interface AbotbashoConfig {
    * (e.g. an emoji or short brand mark). Has no effect on Discord.
    */
   tweetPrefix?: string;
+  /**
+   * NFT-holder verification feature. When enabled, indexer exposes /verify
+   * routes and the discord plugin reconciles a holder role.
+   */
+  verify?: VerifyConfig;
   /**
    * Per-plugin configuration, keyed by plugin name. Each plugin owns its
    * own slice and validates it on init. Use the `pluginConfig<T>(name)`
@@ -94,6 +115,13 @@ const validate = (cfg: unknown): AbotbashoConfig => {
       throw new Error("config.wrapper.label must differ from config.primary.label");
     }
   }
+  if (c.verify?.enabled) {
+    if (!c.verify.roleId) throw new Error("config.verify.roleId is required when verify is enabled");
+    if (!c.verify.publicUrl) throw new Error("config.verify.publicUrl is required when verify is enabled");
+    if (c.verify.openseaBio && !c.verify.openseaSlug) {
+      throw new Error("config.verify.openseaSlug is required when verify.openseaBio is true");
+    }
+  }
   return c as AbotbashoConfig;
 };
 
@@ -124,3 +152,4 @@ export const pluginConfig = <T>(name: string): T | undefined =>
 export const DEFAULT_POLL_INTERVAL_MS = 10_000;
 export const DEFAULT_IPFS_GATEWAY = "https://ipfs.io/ipfs/";
 export const DEFAULT_RSS_POLL_INTERVAL_MS = 5 * 60 * 1000;
+export const DEFAULT_VERIFY_POLL_INTERVAL_MS = 5_000;
