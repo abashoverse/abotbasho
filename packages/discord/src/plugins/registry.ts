@@ -4,6 +4,7 @@ import { wrapperPlugin } from "./wrapper/index.js";
 import { tokensPlugin } from "./tokens/index.js";
 import { configPlugin } from "./config/index.js";
 import { rssPlugin } from "./rss/index.js";
+import { verifyPlugin } from "./verify/index.js";
 
 export const plugins: DiscordPlugin[] = [
   eventsPlugin,
@@ -11,4 +12,5 @@ export const plugins: DiscordPlugin[] = [
   tokensPlugin,
   configPlugin,
   rssPlugin,
+  verifyPlugin,
 ];

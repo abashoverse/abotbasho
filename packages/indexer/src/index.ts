@@ -7,8 +7,11 @@ import {
   loadConfig,
 } from "@abotbasho/shared";
 import type { Address } from "viem";
+import { getVerificationPool } from "./verification/db.js";
+import { maybeRecomputeForVerification } from "./verification/recompute.js";
 
 const cfg = await loadConfig();
+const verifyEnabled = cfg.verify?.enabled === true;
 
 const wrapperAddrLower = cfg.wrapper?.address.toLowerCase();
 
@@ -53,6 +56,18 @@ const handleTransfer = async (
   const from = event.args.from as Address;
   const to = event.args.to as Address;
   const tokenId = event.args.tokenId as bigint;
+
+  // Verification per-link revocation. Runs before the ZERO_ADDRESS skip so
+  // burns also trigger recompute. No-op if verify is disabled or neither
+  // address is in the in-process hot-set.
+  if (verifyEnabled) {
+    await maybeRecomputeForVerification([from, to], {
+      pool: await getVerificationPool(),
+      client: context.client,
+      primaryAddress: cfg.primary.address,
+      wrapperAddress: cfg.wrapper?.address,
+    });
+  }
 
   if (from === ZERO_ADDRESS || to === ZERO_ADDRESS) return;
 

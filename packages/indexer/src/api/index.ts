@@ -3,10 +3,12 @@ import schema from "ponder:schema";
 import { Hono } from "hono";
 import { client } from "ponder";
 import { asc, desc, eq, gt } from "drizzle-orm";
+import verifyApp from "./verify.js";
 
 const app = new Hono();
 
 app.use("/sql/*", client({ db, schema }));
+app.route("/verify", verifyApp);
 
 const stringifyBigints = (rows: Record<string, unknown>[]) =>
   rows.map((row) => {

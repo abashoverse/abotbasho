@@ -39,6 +39,18 @@ export default defineConfig({
   // Prepended to every tweet's title line (e.g. an emoji or short brand mark).
   // Discord is unaffected.
   // tweetPrefix: "",
+  // NFT-holder verification. When enabled, the indexer exposes /verify routes
+  // and the discord plugin reconciles a holder role. Requires the verify-web
+  // service from docker-compose.yml. See README for the security model.
+  // verify: {
+  //   enabled: false,
+  //   roleId: "",                       // Discord role granted to verified holders
+  //   publicUrl: "https://verify.example.xyz",
+  //   pollIntervalMs: 5000,             // role-event drain cadence
+  //   delegateCash: true,               // accept delegate.cash hot/cold delegation
+  //   openseaBio: false,                // bio-code fallback (requires OPENSEA_API_KEY)
+  //   openseaSlug: "",                  // required when openseaBio is true
+  // },
   // Per-plugin configuration. Each plugin owns its slice and validates it
   // on init. See packages/discord/README.md for the available plugins.
   plugins: {

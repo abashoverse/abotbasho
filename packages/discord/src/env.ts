@@ -18,6 +18,7 @@ export const env = {
   INDEXER_SQL_URL: process.env.INDEXER_SQL_URL ?? "http://localhost:42069/sql",
   INDEXER_API_URL: (process.env.INDEXER_SQL_URL ?? "http://localhost:42069/sql").replace(/\/sql\/?$/, ""),
   MAINNET_RPC_URL: required("PONDER_RPC_URL_1"),
+  VERIFY_INTERNAL_SECRET: process.env.VERIFY_INTERNAL_SECRET ?? "",
   CURSOR_FILE: process.env.CURSOR_FILE ?? "./data/cursor.json",
   CONFIG_FILE: process.env.DISCORD_CONFIG_FILE ?? "./data/config.json",
 };

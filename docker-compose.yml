@@ -67,6 +67,27 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Optional: holder-verification web frontend.
+  # Only needed when abotbasho.config.ts has `verify.enabled: true`.
+  # Put a TLS-terminating reverse proxy (Caddy / Traefik / nginx) in front of
+  # this service — never expose :3000 directly to the public internet.
+  verify-web:
+    build:
+      context: .
+      dockerfile: packages/verify-web/Dockerfile
+    image: abotbasho-verify-web:latest
+    env_file: .env
+    environment:
+      - INDEXER_URL=http://indexer:42069
+      - PUBLIC_WALLETCONNECT_PROJECT_ID=${WALLETCONNECT_PROJECT_ID:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      indexer:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["verify"]
+
 volumes:
   indexer-db-data:
   indexer-data:

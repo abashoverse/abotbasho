@@ -14,7 +14,8 @@ Background and motivation: [Self-hosted NFT sales bot (2026)](https://blog.abash
 2. [Quick start](#quick-start)
 3. [Project config](#project-config)
 4. [Environment variables](#environment-variables)
-5. [Per-package docs](#per-package-docs)
+5. [Holder verification (optional)](#holder-verification-optional)
+6. [Per-package docs](#per-package-docs)
 
 ## Architecture
 
@@ -165,6 +166,73 @@ Resolution order:
 | `ABOTBASHO_CONFIG_PATH` | (unset) | Absolute path override for `abotbasho.config.ts`. Useful for running multiple bots from one repo. |
 | `DISCORD_SALES_CHANNEL_ID`, `DISCORD_WRAPS_CHANNEL_ID`, `DISCORD_UNWRAPS_CHANNEL_ID`, `DISCORD_BLOG_CHANNEL_ID` | `DISCORD_CHANNEL_ID` | Per-event-type channel overrides. |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `ponder`, `ponder`, `abotbasho` | Docker compose only. Override to run multiple bots on one host without volume conflicts. |
+
+## Holder verification (optional)
+
+Off by default. When enabled, the bot grants a Discord role to users who can prove on-chain ownership of at least one NFT in `cfg.primary` (or its wrapper). The Discord role is reconciled in real time from on-chain `Transfer` events.
+
+### Methods
+
+| Method | Signature required? | Notes |
+| --- | --- | --- |
+| **SIWE** (EIP-4361) | yes (hot wallet that holds) | Default path. |
+| **delegate.cash v2** | yes (hot wallet acting for cold) | Layered on SIWE. Server live-checks the registry; only `delegateAll` and `delegateContract` are accepted — token-scoped delegations are rejected. |
+| **OpenSea bio** | no | Fallback for users who can't sign. Off by default; requires `OPENSEA_API_KEY`. |
+
+### Per-link revocation policy
+
+A `verification.links` row asserts *"this wallet was proven to hold and still holds"*. When a `Transfer` drops a linked wallet's `balanceOf` to 0, the link row is **deleted** and the user has to redo verification to relink. There is **no auto-regrant** — re-receiving an NFT into a previously-linked wallet does nothing. This closes the wallet-resale attack: even if the wallet's private key is later sold, the new owner can't ride the previous user's verification.
+
+### Known limitation: wallet private-key sale
+
+If the private key of a linked wallet is sold or compromised *without an on-chain Transfer*, the holder role persists until that wallet next moves the NFT. Detecting this requires periodic forced re-SIWE, which is out of scope for v1. Admins can `/verify-admin force-revoke <user>` to remove access manually.
+
+### Enabling the feature
+
+1. **Config.** Add a `verify` block to `abotbasho.config.ts`:
+
+   ```ts
+   verify: {
+     enabled: true,
+     roleId: "<Discord role ID granted to verified holders>",
+     publicUrl: "https://verify.example.xyz",
+     // pollIntervalMs: 5000,
+     // delegateCash: true,
+     // openseaBio: false,
+     // openseaSlug: "my-collection",
+   }
+   ```
+
+2. **Env.** Generate a 32-byte secret shared between bot and indexer and set the WalletConnect project id:
+
+   ```sh
+   echo "VERIFY_INTERNAL_SECRET=$(openssl rand -hex 32)" >> .env
+   echo "WALLETCONNECT_PROJECT_ID=<your-id>" >> .env  # https://cloud.reown.com
+   ```
+
+3. **Bring up the verify-web service** behind the `verify` Compose profile:
+
+   ```sh
+   docker compose --profile verify up -d --build
+   ```
+
+4. **Front it with TLS.** `verify-web` listens on `:3000` over HTTP. Put Caddy, Traefik, or nginx in front to terminate TLS — never expose `:3000` to the public internet directly. The path tokens used in verify URLs rely on TLS for confidentiality.
+
+5. **Move the bot's role above the holder role.** The bot can only manage roles below its own highest role. The verify plugin checks this at apply time and skips roles it can't reach.
+
+### Optional: least-privilege Postgres role
+
+To restrict the verification pool's grants, create a dedicated role and set `VERIFICATION_DB_URL` to its connection string:
+
+```sql
+CREATE ROLE verify_app LOGIN PASSWORD '...';
+GRANT USAGE ON SCHEMA verification TO verify_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA verification TO verify_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA verification TO verify_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA verification GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO verify_app;
+```
+
+Migrations still need a role that can `CREATE` in the DB; run them once with the superuser, then switch the indexer to `VERIFICATION_DB_URL=postgresql://verify_app:...`.
 
 ## Per-package docs
 
