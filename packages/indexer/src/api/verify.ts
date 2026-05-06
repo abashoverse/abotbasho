@@ -534,6 +534,40 @@ verifyApp.post("/finalize-bio", rateLimitPublic, async (c) => {
   return c.json({ ok: true, holder_address: holder, method });
 });
 
+verifyApp.get("/all-links", requireVerifyAuth, async (c) => {
+  // Aggregated list of every discord user with at least one verification.links
+  // row. Used by /verify-admin list (visibility) and /verify-admin sweep
+  // (cross-reference against role holders during transition).
+  const pool = await getVerificationPool();
+  const { rows } = await pool.query<{
+    discord_user_id: string;
+    wallets: string;
+    methods: string[];
+    first_verified: Date;
+    last_checked: Date;
+  }>(
+    `SELECT
+       discord_user_id,
+       COUNT(*)::text AS wallets,
+       ARRAY_AGG(DISTINCT method) AS methods,
+       MIN(verified_at) AS first_verified,
+       MAX(last_checked_at) AS last_checked
+     FROM verification.links
+     GROUP BY discord_user_id
+     ORDER BY first_verified ASC`,
+  );
+  return c.json({
+    total: rows.length,
+    users: rows.map((r) => ({
+      discord_user_id: r.discord_user_id,
+      wallets: Number(r.wallets),
+      methods: r.methods,
+      first_verified: r.first_verified.toISOString(),
+      last_checked: r.last_checked.toISOString(),
+    })),
+  });
+});
+
 verifyApp.get("/role-events", requireVerifyAuth, async (c) => {
   const since = parseInt(c.req.query("since") ?? "0", 10) || 0;
   const limit = Math.min(

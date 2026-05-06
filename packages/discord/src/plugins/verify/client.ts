@@ -63,6 +63,23 @@ export const getLinks = async (discordUserId: string): Promise<LinkRow[]> => {
   return data.links;
 };
 
+export interface VerifiedUser {
+  discord_user_id: string;
+  wallets: number;
+  methods: string[];
+  first_verified: string;
+  last_checked: string;
+}
+
+export const getAllLinks = async (): Promise<{
+  total: number;
+  users: VerifiedUser[];
+}> => {
+  const res = await fetch(url(`/verify/all-links`), { headers: headers() });
+  if (!res.ok) throw new Error(`/verify/all-links ${res.status}`);
+  return (await res.json()) as { total: number; users: VerifiedUser[] };
+};
+
 export interface RoleEvent {
   id: string;
   discord_user_id: string;

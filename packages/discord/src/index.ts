@@ -18,7 +18,12 @@ import { plugins } from "./plugins/registry.js";
 await initConfig(env.CONFIG_FILE);
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds],
+  // GuildMembers is a privileged intent (toggle in the Discord Developer
+  // Portal: Bot → SERVER MEMBERS INTENT). Required for /verify-admin sweep
+  // to enumerate every member with the holder role; without it, the bot
+  // can only see members it has interacted with directly. Safe to leave
+  // off if you don't run the sweep, but the bot won't error either way.
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
   // Prevent any message we send from triggering @everyone / @here / role / user pings,
   // even if external content (RSS title, og:title, custom message) contains the syntax.
   allowedMentions: { parse: [] },
