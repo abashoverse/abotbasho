@@ -80,8 +80,13 @@ services:
     environment:
       - INDEXER_URL=http://indexer:42069
       - PUBLIC_WALLETCONNECT_PROJECT_ID=${WALLETCONNECT_PROJECT_ID:-}
+    # Host port is configurable via VERIFY_WEB_HOST_PORT (default 3000) so
+    # this doesn't collide with another service on the same host. Bound to
+    # loopback only — front it with a TLS-terminating reverse proxy. The
+    # container always listens on 3000 internally; only the host mapping
+    # changes.
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${VERIFY_WEB_HOST_PORT:-3000}:3000"
     depends_on:
       indexer:
         condition: service_healthy
