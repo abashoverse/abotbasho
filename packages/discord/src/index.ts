@@ -7,7 +7,12 @@ import {
 } from "discord.js";
 import { env } from "./env.js";
 import { initConfig } from "./config.js";
-import { allCommands, loadPlugins, shutdownPlugins } from "./plugins/loader.js";
+import {
+  allButtons,
+  allCommands,
+  loadPlugins,
+  shutdownPlugins,
+} from "./plugins/loader.js";
 import { plugins } from "./plugins/registry.js";
 
 await initConfig(env.CONFIG_FILE);
@@ -38,17 +43,34 @@ client.once("clientReady", async (c) => {
 });
 
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-  const cmd = allCommands().find((c) => c.data.name === interaction.commandName);
-  if (!cmd) return;
-  try {
-    await cmd.execute(interaction);
-  } catch (err) {
-    console.error(`[discord] /${interaction.commandName} failed:`, err);
-    const msg = "Command failed.";
-    if (interaction.deferred) await interaction.editReply(msg);
-    else if (!interaction.replied)
-      await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+  if (interaction.isChatInputCommand()) {
+    const cmd = allCommands().find((c) => c.data.name === interaction.commandName);
+    if (!cmd) return;
+    try {
+      await cmd.execute(interaction);
+    } catch (err) {
+      console.error(`[discord] /${interaction.commandName} failed:`, err);
+      const msg = "Command failed.";
+      if (interaction.deferred) await interaction.editReply(msg);
+      else if (!interaction.replied)
+        await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+    }
+    return;
+  }
+
+  if (interaction.isButton()) {
+    const handler = allButtons().find((b) => b.customId === interaction.customId);
+    if (!handler) return;
+    try {
+      await handler.execute(interaction);
+    } catch (err) {
+      console.error(`[discord] button ${interaction.customId} failed:`, err);
+      const msg = "Button action failed.";
+      if (interaction.deferred) await interaction.editReply(msg);
+      else if (!interaction.replied)
+        await interaction.reply({ content: msg, flags: MessageFlags.Ephemeral });
+    }
+    return;
   }
 });
 

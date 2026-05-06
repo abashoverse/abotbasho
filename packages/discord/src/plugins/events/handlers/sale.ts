@@ -3,8 +3,8 @@ import {
   displayAddress,
   displayNameOf,
   ethUsdPrice,
-  etherscanAddr,
-  etherscanTx,
+  explorerAddr,
+  explorerTx,
   fetchTokenImage,
   formatAmount,
   formatUsd,
@@ -80,9 +80,9 @@ export const buildSaleEmbed = async (
     )
     .setURL(openseaToken(event.contractAddress, event.tokenId))
     .addFields(
-      { name: "Seller", value: `[${sellerName}](${etherscanAddr(event.fromAddress)})`, inline: true },
-      { name: "Buyer", value: `[${buyerName}](${etherscanAddr(event.toAddress)})`, inline: true },
-      { name: "Tx", value: `[etherscan](${etherscanTx(event.txHash)})`, inline: true },
+      { name: "Seller", value: `[${sellerName}](${explorerAddr(event.fromAddress)})`, inline: true },
+      { name: "Buyer", value: `[${buyerName}](${explorerAddr(event.toAddress)})`, inline: true },
+      { name: "Tx", value: `[explorer](${explorerTx(event.txHash)})`, inline: true },
     )
     .setFooter({ text: customMessage ?? projectFooter })
     .setTimestamp(Number(event.timestamp) * 1000);

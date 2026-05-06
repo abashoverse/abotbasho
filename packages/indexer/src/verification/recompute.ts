@@ -114,7 +114,7 @@ const balanceAcross = async (
  * Per-link policy: if a linked holder's balance across {primary, wrapper}
  * drops to 0, delete that holder's link rows. If a user thereby has no
  * remaining links, emit a `role_events` revoke. We never insert grants here
- * — grants only come from the verify routes after a fresh proof of control.
+ * Grants only come from the verify routes after a fresh proof of control.
  */
 export const maybeRecomputeForVerification = async (
   affected: readonly Address[],
@@ -143,7 +143,7 @@ export const maybeRecomputeForVerification = async (
     );
 
     if (linkRows.length === 0) {
-      // Hot-set drift — reconcile and continue.
+      // Hot-set drift; reconcile and continue.
       hotSet.delete(lower(addr));
       continue;
     }
@@ -185,7 +185,7 @@ export const maybeRecomputeForVerification = async (
   }
 };
 
-/** Test-only — reset module state between integration tests. */
+/** Test-only. Reset module state between integration tests. */
 export const __resetForTests = (): void => {
   hotSet.clear();
   initPromise = null;

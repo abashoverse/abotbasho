@@ -128,13 +128,36 @@ If your collection has no wrapper, leave the `wrapper` block out of `abotbasho.c
 
 ### Adding a chain
 
-Currently the indexer is hardcoded to Ethereum mainnet (chain ID 1) and the shared helpers (`packages/shared/src/{ens,metadata,tokenInfo}.ts`) use the mainnet viem client. Adapting to other EVM chains takes a few coordinated edits:
+Chain selection is driven by the `INDEXER_CHAIN_ID` env var. Built-in profiles live in `packages/shared/src/chain.ts` and currently ship `mainnet` (id 1) and `anvil` (id 31337, used by `compose.dev.yml`).
 
-- `packages/indexer/ponder.config.ts`: change the `chains` block (id, RPC URL, network name).
-- `packages/shared/src/ens.ts`, `metadata.ts`, `tokenInfo.ts`: swap the `mainnet` chain import.
-- `packages/shared/src/format.ts`: replace the `etherscan.io` and `opensea.io` URL builders.
+To run on a chain that already has a profile (e.g. mainnet, anvil), just set:
 
-ENS only exists on mainnet; on other chains, drop the resolver call or wire in a chain-specific name service (Basenames, etc.). PRs welcome.
+```sh
+INDEXER_CHAIN_ID=1
+PONDER_RPC_URL_1=https://...   # suffix matches the chain id
+```
+
+If `verify.enabled` is true, also set `PUBLIC_INDEXER_CHAIN_ID` to the same value so the verify-web browser bundle picks up the right chain when constructing SIWE messages.
+
+To add a new chain (Base, Polygon, Arbitrum, …):
+
+1. Register a profile in `packages/shared/src/chain.ts`:
+   ```ts
+   import { base } from "viem/chains";
+   const PROFILES: Record<number, ChainProfile> = {
+     1: { id: 1, ponderName: "mainnet", viemChain: mainnet },
+     31337: { id: 31337, ponderName: "anvil", viemChain: ANVIL_CHAIN },
+     8453: { id: 8453, ponderName: "base", viemChain: base },
+   };
+   ```
+2. Set `INDEXER_CHAIN_ID=8453` and `PONDER_RPC_URL_8453=...` in `.env`.
+3. Set `explorerUrl: "https://basescan.org"` in `abotbasho.config.ts` so embed/tweet links point at the right explorer.
+
+**Caveats on non-mainnet chains:**
+- ENS resolution only exists on mainnet. On other chains the resolver returns `null` and addresses fall back to `0x1234…abcd` shortform. Wire in a chain-specific name service (Basenames, etc.) in `packages/shared/src/ens.ts` if you want named links.
+- OpenSea collection links are currently hardcoded to the `ethereum` chain slug in `packages/shared/src/format.ts`. They'll 404 on Base/Polygon/etc. until that becomes config-driven.
+
+PRs welcome.
 
 ## Notes
 

@@ -1,7 +1,12 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { Client } from "discord.js";
-import type { DiscordPlugin, PluginContext, SlashCommand } from "./types.js";
+import type {
+  ButtonHandler,
+  DiscordPlugin,
+  PluginContext,
+  SlashCommand,
+} from "./types.js";
 
 interface LoadedPlugin {
   plugin: DiscordPlugin;
@@ -60,6 +65,9 @@ export const loadPlugins = async (
 
 export const allCommands = (): SlashCommand[] =>
   loaded.flatMap((p) => p.plugin.commands ?? []);
+
+export const allButtons = (): ButtonHandler[] =>
+  loaded.flatMap((p) => p.plugin.buttons ?? []);
 
 export const shutdownPlugins = async (): Promise<void> => {
   for (const { plugin, context, intervalHandles } of loaded.slice().reverse()) {

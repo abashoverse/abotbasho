@@ -74,31 +74,34 @@ const checkDelegateForContract = async (
 };
 
 /**
- * True iff `signer` is delegated by `coldWallet` for the given collection,
- * either via blanket (delegateAll) or contract-scoped (delegateContract).
- * Token-scoped delegations are intentionally rejected so a cold wallet
- * cannot delegate a single token to a hot wallet to game the binary role.
+ * True iff `signer` is delegated by `coldWallet` for any of the configured
+ * collections (primary, optional wrapper), either via blanket (delegateAll)
+ * or contract-scoped (delegateContract). Token-scoped delegations are
+ * intentionally rejected so a cold wallet cannot delegate a single token to
+ * a hot wallet to game the binary role.
  */
 export const isDelegatedHolderOf = async (
   client: PublicClient,
   params: {
     signer: Address;
     coldWallet: Address;
-    collectionContract: Address;
+    collectionContracts: readonly Address[];
   },
 ): Promise<boolean> => {
   if (await checkDelegateForAll(client, params.signer, params.coldWallet)) {
     return true;
   }
-  if (
-    await checkDelegateForContract(
-      client,
-      params.signer,
-      params.collectionContract,
-      params.coldWallet,
-    )
-  ) {
-    return true;
+  for (const contract of params.collectionContracts) {
+    if (
+      await checkDelegateForContract(
+        client,
+        params.signer,
+        contract,
+        params.coldWallet,
+      )
+    ) {
+      return true;
+    }
   }
   return false;
 };

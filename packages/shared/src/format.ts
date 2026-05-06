@@ -1,4 +1,5 @@
 import { formatEther, type Address } from "viem";
+import { getProjectConfig } from "./projectConfig.js";
 import type { Currency } from "./types.js";
 
 export const shortAddr = (addr: Address): string =>
@@ -53,11 +54,25 @@ export const formatDuration = (seconds: bigint): string => {
   return remMo > 0 ? `${plural(y, "year")}, ${plural(remMo, "month")}` : plural(y, "year");
 };
 
-export const etherscanTx = (hash: string): string =>
-  `https://etherscan.io/tx/${hash}`;
+export const DEFAULT_EXPLORER_URL = "https://etherscan.io";
 
-export const etherscanAddr = (addr: Address): string =>
-  `https://etherscan.io/address/${addr}`;
+const explorerBase = (): string => {
+  try {
+    const cfg = getProjectConfig();
+    return (cfg.explorerUrl ?? DEFAULT_EXPLORER_URL).replace(/\/$/, "");
+  } catch {
+    return DEFAULT_EXPLORER_URL;
+  }
+};
 
+export const explorerTx = (hash: string): string =>
+  `${explorerBase()}/tx/${hash}`;
+
+export const explorerAddr = (addr: Address): string =>
+  `${explorerBase()}/address/${addr}`;
+
+// OpenSea collection paths are chain-specific (`/assets/ethereum/`,
+// `/assets/base/`, etc.). Hardcoded to ethereum for now; non-mainnet
+// deployments will get broken OpenSea links until this becomes config-driven.
 export const openseaToken = (collection: Address, tokenId: bigint): string =>
   `https://opensea.io/assets/ethereum/${collection}/${tokenId.toString()}`;

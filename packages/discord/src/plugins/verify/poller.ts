@@ -23,7 +23,7 @@ export const drainRoleEvents = async (cfg: PollerArgs): Promise<void> => {
   try {
     // since=0 always; the indexer filters on applied_at IS NULL so settled
     // events are excluded. Failed applies stay visible and are retried next
-    // tick — no client-side cursor to keep in sync.
+    // tick. No client-side cursor to keep in sync.
     events = await getRoleEvents({ since: 0n, limit: 200 });
   } catch (err) {
     cfg.ctx.errorLog("role-events fetch failed:", err);

@@ -1,12 +1,20 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   type ChatInputCommandInteraction,
+  EmbedBuilder,
   MessageFlags,
   PermissionFlagsBits,
   SlashCommandBuilder,
+  TextChannel,
 } from "discord.js";
 import { getProjectConfig } from "@abotbasho/shared";
 import { getLinks, unlink } from "../client.js";
 import { applyRoleEvent } from "../role.js";
+import { VERIFY_BUTTON_ID } from "../buttons.js";
+
+const EMBED_COLOR = 0x5865f2;
 
 export const verifyAdmin = {
   data: new SlashCommandBuilder()
@@ -34,6 +42,11 @@ export const verifyAdmin = {
             .setDescription("User to revoke")
             .setRequired(true),
         ),
+    )
+    .addSubcommand((s) =>
+      s
+        .setName("post")
+        .setDescription("Post the persistent Verify embed in this channel"),
     ),
   execute: async (interaction: ChatInputCommandInteraction) => {
     if (!interaction.guildId) {
@@ -45,6 +58,52 @@ export const verifyAdmin = {
     }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const sub = interaction.options.getSubcommand();
+
+    if (sub === "post") {
+      const cfg = getProjectConfig();
+      const channel = interaction.channel;
+      if (!channel || !(channel instanceof TextChannel)) {
+        await interaction.editReply(
+          "Run this in a regular text channel where the bot can send messages.",
+        );
+        return;
+      }
+      const embed = new EmbedBuilder()
+        .setColor(EMBED_COLOR)
+        .setTitle(`${cfg.project.name} verification`)
+        .setDescription(
+          [
+            `Click **Verify** to prove on-chain ownership of a **${cfg.project.name}** NFT and unlock the holder role.`,
+            "",
+            "Your private key never leaves your wallet. Verification is a signed message via SIWE (sign-in with Ethereum). delegate.cash hot/cold delegation is supported on the page.",
+          ].join("\n"),
+        );
+      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(VERIFY_BUTTON_ID)
+          .setLabel("Verify")
+          .setStyle(ButtonStyle.Primary),
+      );
+      if (cfg.verify?.sourceCodeUrl) {
+        row.addComponents(
+          new ButtonBuilder()
+            .setLabel("Source code")
+            .setStyle(ButtonStyle.Link)
+            .setURL(cfg.verify.sourceCodeUrl),
+        );
+      }
+      try {
+        await channel.send({ embeds: [embed], components: [row] });
+        await interaction.editReply("Posted.");
+      } catch (err) {
+        console.error("[verify-admin post]", err);
+        await interaction.editReply(
+          "Failed to post. Check the bot has Send Messages + Embed Links here.",
+        );
+      }
+      return;
+    }
+
     const target = interaction.options.getUser("user", true);
 
     if (sub === "status") {
@@ -56,9 +115,9 @@ export const verifyAdmin = {
         }
         const lines = links.map(
           (l) =>
-            `• \`${l.holder_address}\` — ${l.method}` +
+            `• \`${l.holder_address}\` (${l.method})` +
             (l.signer_address ? ` (signer \`${l.signer_address}\`)` : "") +
-            ` — verified ${l.verified_at}`,
+            `, verified ${l.verified_at}`,
         );
         await interaction.editReply(
           [`<@${target.id}> links:`, ...lines].join("\n"),

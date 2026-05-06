@@ -1,9 +1,8 @@
 import { Hono, type Context, type Next } from "hono";
 import { createPublicClient, http, type Address } from "viem";
-import { mainnet } from "viem/chains";
 import { timingSafeEqual } from "node:crypto";
 import type { Pool } from "pg";
-import { getProjectConfig } from "@abotbasho/shared";
+import { getChain, getChainRpcUrl, getProjectConfig } from "@abotbasho/shared";
 import { getVerificationPool } from "../verification/db.js";
 import {
   buildSiweStatement,
@@ -24,12 +23,13 @@ import {
 
 const cfg = getProjectConfig();
 const verifyCfg = cfg.verify;
+const chain = getChain();
 
 // ---- viem client for finalize-time canonical balance reads -------------
 
 const publicClient = createPublicClient({
-  chain: mainnet,
-  transport: http(process.env.PONDER_RPC_URL_1),
+  chain: chain.viemChain,
+  transport: http(getChainRpcUrl()),
 });
 
 const ERC721_BALANCE_OF_ABI = [
@@ -86,12 +86,28 @@ interface RateBucket {
   lastRefill: number;
 }
 const rateBuckets = new Map<string, RateBucket>();
+
+// Lazy idle-eviction so a long-running indexer doesn't accumulate one
+// entry per unique IP forever. Sweep at most every 5 minutes; evict
+// buckets untouched for over an hour (well past any reasonable refill
+// horizon for the configured limits).
+const RATE_BUCKET_IDLE_MS = 60 * 60 * 1000;
+const RATE_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+let lastRateSweep = 0;
+
 const tryConsumeRate = (
   key: string,
   capacity: number,
   refillPerSec: number,
 ): boolean => {
   const now = Date.now();
+  if (now - lastRateSweep > RATE_SWEEP_INTERVAL_MS) {
+    lastRateSweep = now;
+    const cutoff = now - RATE_BUCKET_IDLE_MS;
+    for (const [k, v] of rateBuckets) {
+      if (v.lastRefill < cutoff) rateBuckets.delete(k);
+    }
+  }
   let b = rateBuckets.get(key);
   if (!b) {
     b = { tokens: capacity, lastRefill: now };
@@ -236,16 +252,19 @@ verifyApp.get("/session/:token", rateLimitPublic, async (c) => {
   const pool = await getVerificationPool();
   const row = await peekLinkToken(pool, token);
   if (!row) return c.json({ error: "invalid_or_expired" }, 404);
+  // discord_user_id and guild_id are intentionally NOT in the response.
+  // The page doesn't need them client-side; the SIWE statement (which
+  // includes the discord id) is server-built. Keeps the URL token from
+  // implicitly disclosing the bound discord/guild to anyone who opens it.
   return c.json({
-    discord_user_id: row.discordUserId,
-    guild_id: row.guildId,
     nonce: row.nonce,
     statement: buildSiweStatement(cfg.project.name, row.discordUserId),
     domain: domainOf(),
-    chain_id: 1,
+    chain_id: chain.id,
     project_name: cfg.project.name,
     primary_address: cfg.primary.address,
     delegate_cash_enabled: verifyCfg!.delegateCash !== false,
+    opensea_bio_enabled: verifyCfg!.openseaBio === true,
   });
 });
 
@@ -260,12 +279,16 @@ verifyApp.post("/finalize-siwe", rateLimitPublic, async (c) => {
     return c.json({ error: "token_message_signature_required" }, 400);
   }
   const pool = await getVerificationPool();
-  const consumed = await consumeLinkToken(pool, body.token);
-  if (!consumed) return c.json({ error: "invalid_or_expired" }, 404);
+  // Peek (don't consume) so the user can retry with a different wallet if
+  // SIWE fails or the wallet doesn't hold. Token is consumed atomically on
+  // success below. Spam is bounded by rateLimitPublic + the 10-min token
+  // lifetime + the per-attempt cost of producing a wallet signature.
+  const tokenRow = await peekLinkToken(pool, body.token);
+  if (!tokenRow) return c.json({ error: "invalid_or_expired" }, 404);
 
   const expectedStatement = buildSiweStatement(
     cfg.project.name,
-    consumed.discordUserId,
+    tokenRow.discordUserId,
   );
   let signer: Address;
   try {
@@ -274,14 +297,14 @@ verifyApp.post("/finalize-siwe", rateLimitPublic, async (c) => {
       signature: body.signature,
       expectedDomain: domainOf(),
       expectedStatement,
-      expectedNonce: consumed.nonce,
-      expectedChainId: 1,
+      expectedNonce: tokenRow.nonce,
+      expectedChainId: chain.id,
     });
     signer = r.recoveredAddress;
   } catch (err) {
     const reason = err instanceof SiweVerifyError ? err.reason : "verify_failed";
     await audit(pool, {
-      discordUserId: consumed.discordUserId,
+      discordUserId: tokenRow.discordUserId,
       action: "siwe_rejected",
       detail: reason,
     });
@@ -293,7 +316,7 @@ verifyApp.post("/finalize-siwe", rateLimitPublic, async (c) => {
   if (body.delegated_from) {
     if (verifyCfg!.delegateCash === false) {
       await audit(pool, {
-        discordUserId: consumed.discordUserId,
+        discordUserId: tokenRow.discordUserId,
         signerAddress: signer,
         action: "delegate_rejected",
         detail: "delegate_cash_disabled",
@@ -301,14 +324,17 @@ verifyApp.post("/finalize-siwe", rateLimitPublic, async (c) => {
       return c.json({ error: "delegate_cash_disabled" }, 400);
     }
     const cold = body.delegated_from as Address;
+    const collectionContracts: Address[] = cfg.wrapper
+      ? [cfg.primary.address, cfg.wrapper.address]
+      : [cfg.primary.address];
     const ok = await isDelegatedHolderOf(publicClient, {
       signer,
       coldWallet: cold,
-      collectionContract: cfg.primary.address,
+      collectionContracts,
     });
     if (!ok) {
       await audit(pool, {
-        discordUserId: consumed.discordUserId,
+        discordUserId: tokenRow.discordUserId,
         signerAddress: signer,
         holderAddress: cold,
         action: "delegate_rejected",
@@ -326,7 +352,7 @@ verifyApp.post("/finalize-siwe", rateLimitPublic, async (c) => {
   const balance = await balanceAcross(holder);
   if (balance <= 0n) {
     await audit(pool, {
-      discordUserId: consumed.discordUserId,
+      discordUserId: tokenRow.discordUserId,
       holderAddress: holder,
       signerAddress: signer,
       method,
@@ -335,6 +361,11 @@ verifyApp.post("/finalize-siwe", rateLimitPublic, async (c) => {
     });
     return c.json({ error: "no_holdings" }, 400);
   }
+
+  // All checks passed. Atomically consume the token now. Lost race (token
+  // was consumed by a concurrent successful attempt) returns invalid_or_expired.
+  const consumed = await consumeLinkToken(pool, body.token);
+  if (!consumed) return c.json({ error: "invalid_or_expired" }, 404);
 
   await insertOrRefreshLink(pool, {
     discordUserId: consumed.discordUserId,
@@ -354,91 +385,153 @@ verifyApp.post("/finalize-siwe", rateLimitPublic, async (c) => {
   return c.json({ ok: true, holder_address: holder, method });
 });
 
-verifyApp.post("/bio/start", requireVerifyAuth, async (c) => {
+// Bio start + finalize are token-authed (URL path token). The verify-web
+// page calls these directly via its server-side proxy. Bot is no longer in
+// the bio loop; a single URL token covers both SIWE and bio paths.
+verifyApp.post("/bio/start", rateLimitPublic, async (c) => {
   if (!verifyCfg!.openseaBio) return c.json({ error: "bio_disabled" }, 404);
-  const body = await c.req.json<{ discord_user_id?: string; guild_id?: string }>();
-  if (!body.discord_user_id || !body.guild_id) {
-    return c.json({ error: "discord_user_id_and_guild_id_required" }, 400);
+  if (!process.env.OPENSEA_API_KEY) {
+    return c.json({ error: "bio_misconfigured" }, 500);
   }
+  const body = await c.req.json<{ token?: string }>();
+  if (!body.token) return c.json({ error: "token_required" }, 400);
   const pool = await getVerificationPool();
+  const tokenRow = await peekLinkToken(pool, body.token);
+  if (!tokenRow) return c.json({ error: "invalid_or_expired" }, 404);
+
   const { code, expiresAt } = await issueBioCode(pool, {
-    discordUserId: body.discord_user_id,
-    guildId: body.guild_id,
+    discordUserId: tokenRow.discordUserId,
+    guildId: tokenRow.guildId,
   });
   await audit(pool, {
-    discordUserId: body.discord_user_id,
+    discordUserId: tokenRow.discordUserId,
     action: "bio_started",
   });
   return c.json({ code, expires_at: expiresAt.toISOString() });
 });
 
-verifyApp.post("/finalize-bio", requireVerifyAuth, async (c) => {
+verifyApp.post("/finalize-bio", rateLimitPublic, async (c) => {
   if (!verifyCfg!.openseaBio) return c.json({ error: "bio_disabled" }, 404);
+  if (!process.env.OPENSEA_API_KEY) {
+    return c.json({ error: "bio_misconfigured" }, 500);
+  }
   const body = await c.req.json<{
-    discord_user_id?: string;
-    guild_id?: string;
+    token?: string;
     wallet_address?: string;
     code?: string;
+    delegated_from?: string;
   }>();
-  if (
-    !body.discord_user_id ||
-    !body.guild_id ||
-    !body.wallet_address ||
-    !body.code
-  ) {
-    return c.json(
-      { error: "discord_user_id_guild_id_wallet_address_code_required" },
-      400,
-    );
+  if (!body.token || !body.wallet_address || !body.code) {
+    return c.json({ error: "token_wallet_address_code_required" }, 400);
   }
   const pool = await getVerificationPool();
-  const stored = await findBioCodeForUser(pool, body.discord_user_id);
+  // Peek (don't consume) so failed bio submissions don't burn the token.
+  const tokenRow = await peekLinkToken(pool, body.token);
+  if (!tokenRow) return c.json({ error: "invalid_or_expired" }, 404);
+
+  const stored = await findBioCodeForUser(pool, tokenRow.discordUserId);
   if (!stored || !matchBioCode(body.code, stored.codeHash)) {
     await audit(pool, {
-      discordUserId: body.discord_user_id,
+      discordUserId: tokenRow.discordUserId,
       action: "bio_rejected",
       detail: "code_mismatch_or_expired",
     });
     return c.json({ error: "code_mismatch_or_expired" }, 400);
   }
 
-  const wallet = body.wallet_address as Address;
-  const bio = await fetchOpenseaBio(wallet);
+  const bioWallet = body.wallet_address as Address;
+  const bio = await fetchOpenseaBio(bioWallet);
   if (!bioContainsCode(bio, body.code)) {
     await audit(pool, {
-      discordUserId: body.discord_user_id,
-      holderAddress: wallet,
+      discordUserId: tokenRow.discordUserId,
+      holderAddress: bioWallet,
       action: "bio_rejected",
       detail: "code_not_in_bio",
     });
     return c.json({ error: "code_not_in_bio" }, 400);
   }
 
-  const balance = await balanceAcross(wallet);
+  // Bio match proves control of bioWallet. If delegated_from is supplied,
+  // bioWallet plays the same role as the SIWE signer (the proven-control
+  // wallet) and the cold wallet is the holder we check the balance on.
+  let holder: Address;
+  let signer: Address | undefined;
+  let method: "bio" | "delegate";
+  if (body.delegated_from) {
+    if (verifyCfg!.delegateCash === false) {
+      await audit(pool, {
+        discordUserId: tokenRow.discordUserId,
+        signerAddress: bioWallet,
+        action: "delegate_rejected",
+        detail: "delegate_cash_disabled",
+      });
+      return c.json({ error: "delegate_cash_disabled" }, 400);
+    }
+    const cold = body.delegated_from as Address;
+    const collectionContracts: Address[] = cfg.wrapper
+      ? [cfg.primary.address, cfg.wrapper.address]
+      : [cfg.primary.address];
+    const ok = await isDelegatedHolderOf(publicClient, {
+      signer: bioWallet,
+      coldWallet: cold,
+      collectionContracts,
+    });
+    if (!ok) {
+      await audit(pool, {
+        discordUserId: tokenRow.discordUserId,
+        signerAddress: bioWallet,
+        holderAddress: cold,
+        action: "delegate_rejected",
+        detail: "not_delegated",
+      });
+      return c.json({ error: "not_delegated" }, 400);
+    }
+    holder = cold;
+    signer = bioWallet;
+    method = "delegate";
+  } else {
+    holder = bioWallet;
+    method = "bio";
+  }
+
+  const balance = await balanceAcross(holder);
   if (balance <= 0n) {
     await audit(pool, {
-      discordUserId: body.discord_user_id,
-      holderAddress: wallet,
-      method: "bio",
+      discordUserId: tokenRow.discordUserId,
+      holderAddress: holder,
+      signerAddress: signer,
+      method,
       action: "rejected",
       detail: "no_holdings",
     });
     return c.json({ error: "no_holdings" }, 400);
   }
 
+  // All checks passed. Consume the URL token atomically.
+  const consumed = await consumeLinkToken(pool, body.token);
+  if (!consumed) return c.json({ error: "invalid_or_expired" }, 404);
+
   await insertOrRefreshLink(pool, {
-    discordUserId: body.discord_user_id,
-    guildId: body.guild_id,
-    holderAddress: wallet,
-    method: "bio",
+    discordUserId: consumed.discordUserId,
+    guildId: consumed.guildId,
+    holderAddress: holder,
+    signerAddress: signer,
+    method,
   });
   await audit(pool, {
-    discordUserId: body.discord_user_id,
-    holderAddress: wallet,
-    method: "bio",
+    discordUserId: consumed.discordUserId,
+    holderAddress: holder,
+    signerAddress: signer,
+    method,
     action: "linked",
   });
-  return c.json({ ok: true, holder_address: wallet, method: "bio" });
+  // Tidy: drop any outstanding bio codes for this user. They're only useful
+  // before linking; rows would otherwise sit until 24h TTL expiry.
+  await pool.query(
+    `DELETE FROM verification.bio_codes WHERE discord_user_id = $1`,
+    [consumed.discordUserId],
+  );
+  return c.json({ ok: true, holder_address: holder, method });
 });
 
 verifyApp.get("/role-events", requireVerifyAuth, async (c) => {

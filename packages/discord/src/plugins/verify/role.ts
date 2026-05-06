@@ -28,16 +28,23 @@ export const applyRoleEvent = async (
 
   const member = await guild.members.fetch(params.userId).catch(() => null);
   if (!member) {
-    // User left guild — nothing to apply, treat as success so the event is
+    // User left guild. Nothing to apply, treat as success so the event is
     // marked applied and we stop retrying.
     return { ok: true, reason: "member_not_in_guild" };
   }
 
   try {
+    // Always issue the call. discord.js's role cache can drift (no
+    // GUILD_MEMBER_UPDATE events without the GuildMembers intent, periodic
+    // cache sweeps, restarts), so a `cache.has` guard would short-circuit
+    // an actual role mutation when the cache says the member doesn't have a
+    // role they actually do have (or vice versa). Discord returns 204 for
+    // add-already-has and remove-already-doesnt-have, so unconditional calls
+    // are idempotent.
     if (params.desiredState === "grant") {
-      if (!member.roles.cache.has(role.id)) await member.roles.add(role.id);
+      await member.roles.add(role.id);
     } else {
-      if (member.roles.cache.has(role.id)) await member.roles.remove(role.id);
+      await member.roles.remove(role.id);
     }
     return { ok: true };
   } catch (err) {

@@ -6,8 +6,6 @@ const indexerUrl = (): string => {
 };
 
 export interface SessionInfo {
-  discord_user_id: string;
-  guild_id: string;
   nonce: string;
   statement: string;
   domain: string;
@@ -15,6 +13,7 @@ export interface SessionInfo {
   project_name: string;
   primary_address: string;
   delegate_cash_enabled: boolean;
+  opensea_bio_enabled: boolean;
 }
 
 export const fetchSession = async (
@@ -62,6 +61,79 @@ export const finalizeSiwe = async (
       ok: true,
       holder_address: String(json.holder_address),
       method: json.method as "siwe" | "delegate",
+    };
+  }
+  return {
+    error: typeof json.error === "string" ? json.error : "unknown_error",
+    status: res.status,
+  };
+};
+
+export interface StartBioOk {
+  ok: true;
+  code: string;
+  expires_at: string;
+}
+export interface StartBioError {
+  ok?: false;
+  error: string;
+  status: number;
+}
+
+export const startBio = async (
+  token: string,
+): Promise<StartBioOk | StartBioError> => {
+  const res = await fetch(`${indexerUrl()}/verify/bio/start`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  const json = (await res.json()) as Record<string, unknown>;
+  if (res.ok && typeof json.code === "string") {
+    return {
+      ok: true,
+      code: json.code,
+      expires_at: String(json.expires_at),
+    };
+  }
+  return {
+    error: typeof json.error === "string" ? json.error : "unknown_error",
+    status: res.status,
+  };
+};
+
+export interface FinalizeBioRequest {
+  token: string;
+  wallet_address: string;
+  code: string;
+  delegated_from?: string;
+}
+
+export interface FinalizeBioOk {
+  ok: true;
+  holder_address: string;
+  method: "bio" | "delegate";
+}
+export interface FinalizeBioError {
+  ok?: false;
+  error: string;
+  status: number;
+}
+
+export const finalizeBio = async (
+  body: FinalizeBioRequest,
+): Promise<FinalizeBioOk | FinalizeBioError> => {
+  const res = await fetch(`${indexerUrl()}/verify/finalize-bio`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json()) as Record<string, unknown>;
+  if (res.ok && json.ok === true) {
+    return {
+      ok: true,
+      holder_address: String(json.holder_address),
+      method: (json.method as "bio" | "delegate") ?? "bio",
     };
   }
   return {

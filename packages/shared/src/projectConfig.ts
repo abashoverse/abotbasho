@@ -44,6 +44,12 @@ export interface VerifyConfig {
   openseaBio?: boolean;
   /** OpenSea collection slug; required when openseaBio=true. */
   openseaSlug?: string;
+  /**
+   * Optional URL shown as a "Source code" link button next to the Verify
+   * button on the persistent embed posted via `/verify-admin post`. Omit to
+   * hide the button entirely.
+   */
+  sourceCodeUrl?: string;
 }
 
 export interface AbotbashoConfig {
@@ -60,6 +66,13 @@ export interface AbotbashoConfig {
    * (e.g. an emoji or short brand mark). Has no effect on Discord.
    */
   tweetPrefix?: string;
+  /**
+   * Block explorer base URL used for `/tx/<hash>` and `/address/<addr>`
+   * links in Discord embeds and tweets. Default https://etherscan.io.
+   * Set to https://basescan.org, https://polygonscan.com, etc. for other
+   * chains.
+   */
+  explorerUrl?: string;
   /**
    * NFT-holder verification feature. When enabled, indexer exposes /verify
    * routes and the discord plugin reconciles a holder role.

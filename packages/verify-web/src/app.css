@@ -1,0 +1,82 @@
+/* Theme tokens for the verify page.
+ *
+ * To re-skin the page for a fork, edit the `:root` and `:root.dark` blocks
+ * below. No other files need to change. The page's component styles all
+ * reference these CSS custom properties.
+ *
+ * The default palette mirrors the abashoverse-blog "LCD" aesthetic
+ * (sage-green light mode, near-black dark mode). The four colors most worth
+ * overriding for a brand fork are --bg, --fg, --border, and --accent.
+ *
+ * Fonts: the defaults are a system stack so the page works without
+ * licensed font files. To bundle your own brand fonts, drop the files into
+ * `static/fonts/`, add `@font-face` declarations at the bottom of this
+ * file, and update --font-display / --font-body / --font-mono.
+ */
+
+:root {
+  /* Light LCD */
+  --bg:           #D4DED1;
+  --bg-elevated:  #E2EAE0;
+  --bg-sunken:    #C5D1C2;
+  --fg:           #0D0D0D;
+  --fg-on-accent: #FFFFFF;
+  --accent:       #0D0D0D;
+  --border:       #1A1A1A;
+  --muted:        #6B6B6B;
+  --error:        #B91C1C;
+  --error-bg:     #FCA5A5;
+  --ok:           #15803D;
+  --ok-bg:        #BBF7D0;
+
+  --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body:    ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:    ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  --radius:       0.5rem;
+  --border-w:     2px;
+  --ease:         cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+:root.dark {
+  /* Inverted LCD */
+  --bg:           #0a0a0a;
+  --bg-elevated:  #111111;
+  --bg-sunken:    #1f1f1f;
+  --fg:           #D4DED1;
+  --fg-on-accent: #0a0a0a;
+  --accent:       #D4DED1;
+  --border:       #D4DED1;
+  --muted:        #8A9A8A;
+  --error:        #F87171;
+  --error-bg:     #3F1414;
+  --ok:           #4ADE80;
+  --ok-bg:        #0F2A18;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--fg);
+  min-height: 100vh;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+}
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }

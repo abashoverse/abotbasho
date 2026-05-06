@@ -4,7 +4,7 @@ import {
   type Address,
   type PublicClient,
 } from "viem";
-import { mainnet } from "viem/chains";
+import { getChain } from "./chain.js";
 
 const abi = [
   {
@@ -27,7 +27,10 @@ let client: PublicClient | null = null;
 
 const getClient = (rpcUrl: string): PublicClient => {
   if (!client) {
-    client = createPublicClient({ chain: mainnet, transport: http(rpcUrl) });
+    client = createPublicClient({
+      chain: getChain().viemChain,
+      transport: http(rpcUrl),
+    });
   }
   return client;
 };

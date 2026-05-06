@@ -28,64 +28,6 @@ export const startSiwe = async (params: {
   return { url: data.url, expiresAt: data.expires_at };
 };
 
-export const startBio = async (params: {
-  discordUserId: string;
-  guildId: string;
-}): Promise<{ code: string; expiresAt: string }> => {
-  const res = await fetch(url("/verify/bio/start"), {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({
-      discord_user_id: params.discordUserId,
-      guild_id: params.guildId,
-    }),
-  });
-  if (!res.ok) throw new Error(`/verify/bio/start ${res.status}`);
-  const data = (await res.json()) as { code: string; expires_at: string };
-  return { code: data.code, expiresAt: data.expires_at };
-};
-
-export interface FinalizeBioOk {
-  ok: true;
-  holder_address: string;
-  method: "bio";
-}
-export interface FinalizeBioError {
-  ok?: false;
-  error: string;
-  status: number;
-}
-
-export const finalizeBio = async (params: {
-  discordUserId: string;
-  guildId: string;
-  walletAddress: string;
-  code: string;
-}): Promise<FinalizeBioOk | FinalizeBioError> => {
-  const res = await fetch(url("/verify/finalize-bio"), {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({
-      discord_user_id: params.discordUserId,
-      guild_id: params.guildId,
-      wallet_address: params.walletAddress,
-      code: params.code,
-    }),
-  });
-  const data = (await res.json()) as Record<string, unknown>;
-  if (res.ok && data.ok === true) {
-    return {
-      ok: true,
-      holder_address: String(data.holder_address),
-      method: "bio",
-    };
-  }
-  return {
-    error: typeof data.error === "string" ? data.error : "unknown_error",
-    status: res.status,
-  };
-};
-
 export const unlink = async (params: {
   discordUserId: string;
   guildId: string;

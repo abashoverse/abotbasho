@@ -6,7 +6,7 @@ import {
 import {
   displayAddress,
   displayNameOf,
-  etherscanAddr,
+  explorerAddr,
   fetchTokenImage,
   formatDuration,
   getProjectConfig,
@@ -103,7 +103,7 @@ export const view = {
       .setURL(openseaToken(cfg.primary.address, tokenId))
       .addFields({
         name: "Owner",
-        value: `[${ownerName}](${etherscanAddr(owner)})`,
+        value: `[${ownerName}](${explorerAddr(owner)})`,
         inline: true,
       });
 

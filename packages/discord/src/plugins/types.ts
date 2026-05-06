@@ -1,4 +1,5 @@
 import type {
+  ButtonInteraction,
   ChatInputCommandInteraction,
   Client,
   SlashCommandBuilder,
@@ -7,6 +8,12 @@ import type {
 export interface SlashCommand {
   data: Pick<SlashCommandBuilder, "name" | "toJSON">;
   execute: (interaction: ChatInputCommandInteraction) => Promise<void>;
+}
+
+export interface ButtonHandler {
+  // Button customId. Use a `<plugin>:<action>` convention to avoid collisions.
+  customId: string;
+  execute: (interaction: ButtonInteraction) => Promise<void>;
 }
 
 export interface PluginContext {
@@ -31,5 +38,6 @@ export interface DiscordPlugin {
   init?: (ctx: PluginContext) => Promise<void>;
   shutdown?: (ctx: PluginContext) => Promise<void>;
   commands?: SlashCommand[];
+  buttons?: ButtonHandler[];
   intervals?: PluginInterval[];
 }

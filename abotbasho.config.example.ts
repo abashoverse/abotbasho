@@ -39,6 +39,10 @@ export default defineConfig({
   // Prepended to every tweet's title line (e.g. an emoji or short brand mark).
   // Discord is unaffected.
   // tweetPrefix: "",
+  // Block explorer base URL used for tx/address links in embeds and tweets.
+  // Default https://etherscan.io. Set to your chain's explorer when running
+  // on Base, Polygon, etc. (e.g. "https://basescan.org").
+  // explorerUrl: "https://etherscan.io",
   // NFT-holder verification. When enabled, the indexer exposes /verify routes
   // and the discord plugin reconciles a holder role. Requires the verify-web
   // service from docker-compose.yml. See README for the security model.
@@ -50,6 +54,7 @@ export default defineConfig({
   //   delegateCash: true,               // accept delegate.cash hot/cold delegation
   //   openseaBio: false,                // bio-code fallback (requires OPENSEA_API_KEY)
   //   openseaSlug: "",                  // required when openseaBio is true
+  //   sourceCodeUrl: "https://github.com/your-fork/abotbasho", // optional Source code link button on the persistent embed
   // },
   // Per-plugin configuration. Each plugin owns its slice and validates it
   // on init. See packages/discord/README.md for the available plugins.

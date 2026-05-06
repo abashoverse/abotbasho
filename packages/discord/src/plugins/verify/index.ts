@@ -5,8 +5,8 @@ import {
 import type { DiscordPlugin } from "../types.js";
 import { env } from "../../env.js";
 import { drainRoleEvents } from "./poller.js";
+import { verifyButton } from "./buttons.js";
 import { verify } from "./commands/verify.js";
-import { verifyBio } from "./commands/verify-bio.js";
 import { unverify } from "./commands/unverify.js";
 import { verifyAdmin } from "./commands/verify-admin.js";
 
@@ -16,14 +16,7 @@ const cfg = getProjectConfig().verify;
 const enabled = cfg?.enabled === true;
 const intervalMs = cfg?.pollIntervalMs ?? DEFAULT_VERIFY_POLL_INTERVAL_MS;
 
-const commands = enabled
-  ? [
-      verify,
-      ...(cfg!.openseaBio ? [verifyBio] : []),
-      unverify,
-      verifyAdmin,
-    ]
-  : [];
+const commands = enabled ? [verify, unverify, verifyAdmin] : [];
 
 export const verifyPlugin: DiscordPlugin = {
   name: VERIFY_PLUGIN_NAME,
@@ -59,4 +52,5 @@ export const verifyPlugin: DiscordPlugin = {
       ]
     : [],
   commands,
+  buttons: enabled ? [verifyButton] : [],
 };

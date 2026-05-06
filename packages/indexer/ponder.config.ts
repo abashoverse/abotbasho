@@ -1,15 +1,16 @@
 import { createConfig } from "ponder";
-import { loadConfig, loadRootEnv } from "@abotbasho/shared";
+import { getChain, getChainRpcUrl, loadConfig, loadRootEnv } from "@abotbasho/shared";
 import { Erc721Abi, WrapperAbi } from "@abotbasho/shared/abis";
 
 loadRootEnv();
 
 const cfg = await loadConfig();
+const chain = getChain();
 
 const contracts: Record<string, unknown> = {
   [cfg.primary.label]: {
     abi: Erc721Abi,
-    chain: "mainnet",
+    chain: chain.ponderName,
     address: cfg.primary.address,
     startBlock: Number(cfg.primary.deployBlock),
   },
@@ -18,7 +19,7 @@ const contracts: Record<string, unknown> = {
 if (cfg.wrapper) {
   contracts[cfg.wrapper.label] = {
     abi: WrapperAbi,
-    chain: "mainnet",
+    chain: chain.ponderName,
     address: cfg.wrapper.address,
     startBlock: Number(cfg.wrapper.deployBlock),
   };
@@ -26,9 +27,9 @@ if (cfg.wrapper) {
 
 export default createConfig({
   chains: {
-    mainnet: {
-      id: 1,
-      rpc: process.env.PONDER_RPC_URL_1!,
+    [chain.ponderName]: {
+      id: chain.id,
+      rpc: getChainRpcUrl(),
     },
   },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

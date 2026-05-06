@@ -66,6 +66,7 @@
       "name": "@abotbasho/verify-web",
       "version": "0.1.0",
       "dependencies": {
+        "@abotbasho/shared": "workspace:*",
         "@wagmi/connectors": "^5.7.0",
         "@wagmi/core": "^2.16.0",
         "siwe": "^2.3.2",

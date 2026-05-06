@@ -1,4 +1,4 @@
-// delegate.cash v2 registry — only the read-paths we use for verification.
+// delegate.cash v2 registry. Only the read-paths we use for verification.
 // Full registry: https://github.com/delegatexyz/delegate-registry/blob/main/src/DelegateRegistry.sol
 export const DelegateRegistryV2Abi = [
   {

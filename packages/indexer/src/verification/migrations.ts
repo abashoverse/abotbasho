@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 
 // Namespaced pg_advisory_lock keys for the verification migration runner.
-// Stable forever — never reuse this (key1, key2) pair anywhere else.
+// Stable forever. Never reuse this (key1, key2) pair anywhere else.
 const ADVISORY_LOCK_KEY1 = 0x4b07ba50;
 const ADVISORY_LOCK_KEY2 = 1;
 

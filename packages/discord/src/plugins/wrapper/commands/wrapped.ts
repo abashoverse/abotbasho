@@ -6,7 +6,7 @@ import {
 import {
   displayAddress,
   displayNameOf,
-  etherscanAddr,
+  explorerAddr,
   fetchTokenImage,
   formatDuration,
   getProjectConfig,
@@ -122,7 +122,7 @@ export const wrapped = {
       .setTitle(`${displayName} #${id} | ${info.status}`)
       .setURL(openseaToken(cfg.primary.address, tokenId))
       .addFields(
-        { name: "Owner", value: `[${ownerName}](${etherscanAddr(info.owner)})`, inline: true },
+        { name: "Owner", value: `[${ownerName}](${explorerAddr(info.owner)})`, inline: true },
         { name: "Held for", value: info.durationText, inline: true },
       );
 

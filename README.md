@@ -6,7 +6,7 @@ Sales are decoded directly from `OrderFulfilled` (Seaport) and `Execution721Pack
 
 Background and motivation: [Self-hosted NFT sales bot (2026)](https://blog.abashoverse.com/posts/self-hosted-nft-sales-bot-2026).
 
-> **Chain support:** Ethereum mainnet only out of the box. Adapting to another EVM chain (Base, Polygon, Arbitrum, etc.) takes a handful of coordinated edits in the indexer config, shared chain helpers, and explorer URL builders. See [packages/indexer/README.md → Adding a chain](./packages/indexer/README.md#adding-a-chain).
+> **Chain support:** Defaults to Ethereum mainnet. Other EVM chains are selected via the `INDEXER_CHAIN_ID` env var; built-in profiles live in `packages/shared/src/chain.ts` (`mainnet` and `anvil` ship by default). Add more profiles there to support Base, Polygon, etc. See [packages/indexer/README.md → Adding a chain](./packages/indexer/README.md#adding-a-chain).
 
 ## Contents
 
@@ -15,7 +15,8 @@ Background and motivation: [Self-hosted NFT sales bot (2026)](https://blog.abash
 3. [Project config](#project-config)
 4. [Environment variables](#environment-variables)
 5. [Holder verification (optional)](#holder-verification-optional)
-6. [Per-package docs](#per-package-docs)
+6. [Local development with anvil](#local-development-with-anvil)
+7. [Per-package docs](#per-package-docs)
 
 ## Architecture
 
@@ -150,7 +151,7 @@ Resolution order:
 
 | Variable | Used by | Purpose |
 | --- | --- | --- |
-| `PONDER_RPC_URL_1` | indexer + bots | Ethereum mainnet RPC URL (Alchemy, dRPC, Infura, your own node). Bots use it for ENS + token metadata. |
+| `PONDER_RPC_URL_<chainId>` | indexer + bots | RPC URL for the chain you're indexing. Suffix matches `INDEXER_CHAIN_ID` (e.g. `PONDER_RPC_URL_1` for mainnet). Anything that supports `eth_getLogs` works. |
 | `DISCORD_TOKEN` | discord | Bot token from the Discord Developer Portal. |
 | `DISCORD_CLIENT_ID` | discord | Application ID. |
 | `DISCORD_GUILD_ID` | discord | Server (guild) ID where slash commands register. |
@@ -161,6 +162,7 @@ Resolution order:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `INDEXER_CHAIN_ID` | `1` | Chain id the indexer + bots target. `1` = mainnet, `31337` = local anvil. Add more in `packages/shared/src/chain.ts`. |
 | `PONDER_PORT` | `42069` | Internal indexer port. |
 | `INDEXER_SQL_URL` | `http://localhost:42069/sql` | Where bots reach the indexer. Compose sets it to `http://indexer:42069/sql`. |
 | `ABOTBASHO_CONFIG_PATH` | (unset) | Absolute path override for `abotbasho.config.ts`. Useful for running multiple bots from one repo. |
@@ -176,12 +178,12 @@ Off by default. When enabled, the bot grants a Discord role to users who can pro
 | Method | Signature required? | Notes |
 | --- | --- | --- |
 | **SIWE** (EIP-4361) | yes (hot wallet that holds) | Default path. |
-| **delegate.cash v2** | yes (hot wallet acting for cold) | Layered on SIWE. Server live-checks the registry; only `delegateAll` and `delegateContract` are accepted — token-scoped delegations are rejected. |
+| **delegate.cash v2** | yes (hot wallet acting for cold) | Layered on SIWE. Server live-checks the registry; only `delegateAll` and `delegateContract` are accepted (token-scoped delegations are rejected). |
 | **OpenSea bio** | no | Fallback for users who can't sign. Off by default; requires `OPENSEA_API_KEY`. |
 
 ### Per-link revocation policy
 
-A `verification.links` row asserts *"this wallet was proven to hold and still holds"*. When a `Transfer` drops a linked wallet's `balanceOf` to 0, the link row is **deleted** and the user has to redo verification to relink. There is **no auto-regrant** — re-receiving an NFT into a previously-linked wallet does nothing. This closes the wallet-resale attack: even if the wallet's private key is later sold, the new owner can't ride the previous user's verification.
+A `verification.links` row asserts *"this wallet was proven to hold and still holds"*. When a `Transfer` drops a linked wallet's `balanceOf` to 0, the link row is **deleted** and the user has to redo verification to relink. There is **no auto-regrant**: re-receiving an NFT into a previously-linked wallet does nothing. This closes the wallet-resale attack: even if the wallet's private key is later sold, the new owner can't ride the previous user's verification.
 
 ### Known limitation: wallet private-key sale
 
@@ -216,9 +218,23 @@ If the private key of a linked wallet is sold or compromised *without an on-chai
    docker compose --profile verify up -d --build
    ```
 
-4. **Front it with TLS.** `verify-web` listens on `:3000` over HTTP. Put Caddy, Traefik, or nginx in front to terminate TLS — never expose `:3000` to the public internet directly. The path tokens used in verify URLs rely on TLS for confidentiality.
+4. **Front it with TLS.** `verify-web` listens on `:3000` over HTTP. Put Caddy, Traefik, or nginx in front to terminate TLS; never expose `:3000` to the public internet directly. The path tokens used in verify URLs rely on TLS for confidentiality.
 
 5. **Move the bot's role above the holder role.** The bot can only manage roles below its own highest role. The verify plugin checks this at apply time and skips roles it can't reach.
+
+### Customizing the verify page
+
+`packages/verify-web` ships a single-page SvelteKit app for the SIWE flow. The visual design is driven entirely by CSS custom properties in `packages/verify-web/src/app.css`. To re-skin it for your fork:
+
+1. **Colors.** Edit the `:root` and `:root.dark` blocks at the top of `app.css`. The four most worth overriding are `--bg`, `--fg`, `--border`, and `--accent`. Page components (the card, buttons, error/ok blocks, mono code labels) all read from these tokens, so changes propagate without touching `+page.svelte`.
+
+2. **Fonts.** The default stack is system fonts so the page works without licensed font files. To bundle your own brand fonts, drop the files into `packages/verify-web/static/fonts/`, add `@font-face` rules at the bottom of `app.css`, and update `--font-display` / `--font-body` / `--font-mono`.
+
+3. **Light/dark default.** The page defaults to dark and respects `prefers-color-scheme`. The pre-paint script in `packages/verify-web/src/app.html` reads `localStorage["verify-theme"]` first if you want to ship a theme toggle later.
+
+4. **Copy.** Title, eyebrow, lede, and footer text live in `packages/verify-web/src/routes/v/[token]/+page.svelte`. The user-facing error labels are mapped from indexer error codes via `errorLabel(...)` in the same file.
+
+After editing, rebuild verify-web (`docker compose ... up -d --build verify-web`) for the changes to land.
 
 ### Optional: least-privilege Postgres role
 
@@ -233,6 +249,64 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA verification GRANT SELECT, INSERT, UPDATE, DE
 ```
 
 Migrations still need a role that can `CREATE` in the DB; run them once with the superuser, then switch the indexer to `VERIFICATION_DB_URL=postgresql://verify_app:...`.
+
+## Local development with anvil
+
+For iterating on the indexer, verify flow, or marketplace decoders without burning mainnet gas, the repo ships a `compose.dev.yml` overlay that swaps in a local [anvil](https://book.getfoundry.sh/anvil/) node forking your mainnet RPC. The fork preserves real collection state and the delegate.cash registry, so production code paths exercise unchanged.
+
+### Setup
+
+1. Bring the stack up (verify profile included if you want to test that flow):
+
+   ```sh
+   docker compose -f docker-compose.yml -f compose.dev.yml --profile verify up -d --build
+   ```
+
+   This boots `anvil` (forking from `PONDER_RPC_URL_1`), then the indexer and verify-web with `INDEXER_CHAIN_ID=31337`.
+
+2. Seed the dev wallet with an NFT from your configured `cfg.primary` collection:
+
+   ```sh
+   bun run dev:seed              # transfers tokenId 1 from cfg.primary
+   bun run dev:seed 4242         # transfers a specific tokenId
+   ```
+
+   The script reads `ownerOf(tokenId)` on the fork, impersonates that owner via `anvil_impersonateAccount`, funds them, and transfers the token to anvil's account 0 (`0xf39F…2266`). Re-run after restarting anvil; state lives in memory.
+
+   To seed a wrapped token instead (handy for testing the delegate.cash flow when a cold wallet holds the wrapped version), use the wrapper variant:
+
+   ```sh
+   bun run dev:seed-wrapper          # tokenId 1 from cfg.wrapper
+   bun run dev:seed-wrapper 4242     # specific tokenId
+   ```
+
+3. Import the dev wallet into MetaMask. Anvil's account 0 has a public, well-known private key:
+
+   ```
+   0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+   ```
+
+   Then add a custom network: name `Anvil`, RPC `http://127.0.0.1:8545`, chain id `31337`, symbol `ETH`.
+
+### Test loop
+
+- Run `/verify` in your Discord guild → page opens at `http://localhost:3000/v/<token>` (or wherever your `verify.publicUrl` points). Sign with the imported anvil account. Role applies within `pollIntervalMs`.
+- To exercise revocation: `bun run dev:unseed` (transfers primary tokenId 1 to `0x…dEaD`; pass `<tokenId> [recipient]` to override). The indexer's Transfer hook fires, `balanceOf` drops to 0, the link row is deleted, and the role is revoked on next poll. No gas, no waiting. Re-run `bun run dev:seed` to put the NFT back. For wrapper-side revocation, use `bun run dev:unseed-wrapper`.
+
+### Caveats
+
+- The fork is in-memory; restarting `anvil` resets to fresh fork state. Re-run `bun run dev:seed`.
+- `tokenId 1` may not exist in every collection. Pass an existing tokenId as the second arg.
+- `verify.publicUrl` and `VERIFY_PUBLIC_DOMAIN` still need to match where the browser opens the page (typically `http://localhost:3000`).
+- After modifying indexer code (ponder.config.ts, schema, handlers) Ponder will refuse to reuse the existing schema with a `Schema 'abotbasho' was previously used by a different Ponder app` error. The simplest fix is a clean reset:
+
+  ```sh
+  docker compose -f docker-compose.yml -f compose.dev.yml --profile verify down -v
+  docker compose -f docker-compose.yml -f compose.dev.yml --profile verify up -d --build
+  bun run dev:seed
+  ```
+
+  If you want to preserve `verification.links` rows, drop only the Ponder schema instead: `docker compose exec indexer-db psql -U ponder abotbasho -c "DROP SCHEMA abotbasho CASCADE;"`.
 
 ## Per-package docs
 

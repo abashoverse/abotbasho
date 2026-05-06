@@ -11,7 +11,10 @@ export const issueBioCode = async (
   pool: Pool,
   params: { discordUserId: string; guildId: string },
 ): Promise<{ code: string; expiresAt: Date }> => {
-  const code = `${BIO_CODE_PREFIX}${randomBytes(4).toString("hex")}`;
+  // 8 random bytes = 64 bits. With our public rate limits, brute-forcing
+  // a code is computationally infeasible regardless, but the longer string
+  // also rules out trivial copy/typo collisions.
+  const code = `${BIO_CODE_PREFIX}${randomBytes(8).toString("hex")}`;
   const expiresAt = new Date(Date.now() + BIO_CODE_TTL_SEC * 1000);
   await pool.query(
     `INSERT INTO verification.bio_codes (code_hash, discord_user_id, guild_id, expires_at)
@@ -79,7 +82,7 @@ const fetchBioOnce = async (address: string): Promise<string | null> => {
 /**
  * Fetch the OpenSea bio for an address with one jittered retry. Concurrent
  * calls for the same address share a single fetch (single-flight). Any
- * failure (timeout, network, 4xx, 5xx, 429) returns null — callers treat
+ * failure (timeout, network, 4xx, 5xx, 429) returns null. Callers treat
  * null as "no match" and the user can retry from the verify page.
  */
 export const fetchOpenseaBio = async (

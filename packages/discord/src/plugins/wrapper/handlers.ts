@@ -2,8 +2,8 @@ import { EmbedBuilder } from "discord.js";
 import {
   displayAddress,
   displayNameOf,
-  etherscanAddr,
-  etherscanTx,
+  explorerAddr,
+  explorerTx,
   fetchTokenImage,
   getProjectConfig,
   openseaToken,
@@ -47,8 +47,8 @@ export const buildWrapEmbed = async (
     .setTitle(`${titleContract} #${event.tokenId} | ${stateLabel}`)
     .setURL(openseaToken(linkAddress, event.tokenId))
     .addFields(
-      { name: "By", value: `[${ownerName}](${etherscanAddr(event.owner)})`, inline: true },
-      { name: "Tx", value: `[etherscan](${etherscanTx(event.txHash)})`, inline: true },
+      { name: "By", value: `[${ownerName}](${explorerAddr(event.owner)})`, inline: true },
+      { name: "Tx", value: `[explorer](${explorerTx(event.txHash)})`, inline: true },
     )
     .setFooter({ text: customMessage ?? projectFooter })
     .setTimestamp(Number(event.timestamp) * 1000);

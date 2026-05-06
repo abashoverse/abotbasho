@@ -8,9 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node build",
-    "sync": "svelte-kit sync"
+    "sync": "svelte-kit sync",
+    "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
+    "@abotbasho/shared": "workspace:*",
     "@wagmi/connectors": "^5.7.0",
     "@wagmi/core": "^2.16.0",
     "siwe": "^2.3.2",

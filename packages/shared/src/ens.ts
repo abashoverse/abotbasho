@@ -1,5 +1,5 @@
 import { createPublicClient, http, type Address, type PublicClient } from "viem";
-import { mainnet } from "viem/chains";
+import { getChain } from "./chain.js";
 
 interface CacheEntry {
   name: string | null;
@@ -14,7 +14,7 @@ let client: PublicClient | null = null;
 const getClient = (rpcUrl: string): PublicClient => {
   if (!client) {
     client = createPublicClient({
-      chain: mainnet,
+      chain: getChain().viemChain,
       transport: http(rpcUrl),
     });
   }
