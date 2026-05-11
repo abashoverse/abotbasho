@@ -44,17 +44,26 @@ export default defineConfig({
   // on Base, Polygon, etc. (e.g. "https://basescan.org").
   // explorerUrl: "https://etherscan.io",
   // NFT-holder verification. When enabled, the indexer exposes /verify routes
-  // and the discord plugin reconciles a holder role. Requires the verify-web
-  // service from docker-compose.yml. See README for the security model.
+  // and each configured platform's bot reconciles access (Discord role,
+  // Telegram chat invite/kick). Requires the verify-web service from
+  // docker-compose.yml. See README for the security model.
   // verify: {
   //   enabled: false,
-  //   roleId: "",                       // Discord role granted to verified holders
   //   publicUrl: "https://verify.example.xyz",
-  //   pollIntervalMs: 5000,             // role-event drain cadence
+  //   pollIntervalMs: 5000,             // role-event drain cadence (applies to every platform)
   //   delegateCash: true,               // accept delegate.cash hot/cold delegation
   //   openseaBio: false,                // bio-code fallback (requires OPENSEA_API_KEY)
   //   openseaSlug: "",                  // required when openseaBio is true
   //   sourceCodeUrl: "https://github.com/your-fork/abotbasho", // optional Source code link button on the persistent embed
+  //   // At least one platform block is required when verify.enabled is true.
+  //   discord: {
+  //     roleId: "",                     // Discord role granted to verified holders
+  //   },
+  //   telegram: {
+  //     chatId: "-1001234567890",       // gated supergroup id; bot must be admin with Invite + Ban perms
+  //     inviteLinkExpirySec: 600,       // single-use invite TTL (default 600)
+  //     kickSemantics: true,            // ban + immediate unban so a re-verified user can rejoin
+  //   },
   // },
   // Per-plugin configuration. Each plugin owns its slice and validates it
   // on init. See packages/discord/README.md for the available plugins.

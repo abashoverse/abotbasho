@@ -30,13 +30,38 @@ export interface ProjectMessages {
   unwrap?: string;
 }
 
-export interface VerifyConfig {
-  enabled: boolean;
+export interface VerifyDiscordConfig {
   /** Discord role granted to verified holders. */
   roleId: string;
+}
+
+export interface VerifyTelegramConfig {
+  /**
+   * Gated Telegram chat. Typically a supergroup id like "-1001234567890".
+   * Strings are accepted (env-friendly); the bot coerces to numeric where
+   * the Bot API requires it.
+   */
+  chatId: string;
+  /**
+   * How long a generated single-use invite link stays valid for the user
+   * who just verified. Default 600 (10 minutes). Short windows make stolen
+   * invite links almost useless.
+   */
+  inviteLinkExpirySec?: number;
+  /**
+   * If true (default), revoke is banChatMember followed immediately by
+   * unbanChatMember(only_if_banned=true) so the user is kicked but can
+   * rejoin via a fresh invite link after re-verifying. Set false for a
+   * sticky ban that requires manual unban.
+   */
+  kickSemantics?: boolean;
+}
+
+export interface VerifyConfig {
+  enabled: boolean;
   /** Public-facing URL of the verify-web service (e.g. https://verify.example.xyz). */
   publicUrl: string;
-  /** Discord role-event poll cadence. Default 5000. */
+  /** Role-event poll cadence (applies to every platform). Default 5000. */
   pollIntervalMs?: number;
   /** Allow delegate.cash hot/cold delegation alongside SIWE. Default true. */
   delegateCash?: boolean;
@@ -50,6 +75,14 @@ export interface VerifyConfig {
    * hide the button entirely.
    */
   sourceCodeUrl?: string;
+  /**
+   * Per-platform actuation. Each block opts a specific bot into the verify
+   * flow. At least one of `discord` or `telegram` is required when verify
+   * is enabled. Both can be set; the indexer fans out role_events per
+   * platform and each bot drains only its own.
+   */
+  discord?: VerifyDiscordConfig;
+  telegram?: VerifyTelegramConfig;
 }
 
 export interface AbotbashoConfig {
@@ -129,8 +162,18 @@ const validate = (cfg: unknown): AbotbashoConfig => {
     }
   }
   if (c.verify?.enabled) {
-    if (!c.verify.roleId) throw new Error("config.verify.roleId is required when verify is enabled");
     if (!c.verify.publicUrl) throw new Error("config.verify.publicUrl is required when verify is enabled");
+    if (!c.verify.discord && !c.verify.telegram) {
+      throw new Error(
+        "config.verify.discord and/or config.verify.telegram is required when verify is enabled",
+      );
+    }
+    if (c.verify.discord && !c.verify.discord.roleId) {
+      throw new Error("config.verify.discord.roleId is required when verify.discord is set");
+    }
+    if (c.verify.telegram && !c.verify.telegram.chatId) {
+      throw new Error("config.verify.telegram.chatId is required when verify.telegram is set");
+    }
     if (c.verify.openseaBio && !c.verify.openseaSlug) {
       throw new Error("config.verify.openseaSlug is required when verify.openseaBio is true");
     }

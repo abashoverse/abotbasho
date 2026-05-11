@@ -13,7 +13,9 @@ import { verifyAdmin } from "./commands/verify-admin.js";
 export const VERIFY_PLUGIN_NAME = "verify";
 
 const cfg = getProjectConfig().verify;
-const enabled = cfg?.enabled === true;
+// The discord plugin only activates when verify itself is on AND a discord
+// block is present. Telegram-only deployments leave this dormant.
+const enabled = cfg?.enabled === true && cfg.discord !== undefined;
 const intervalMs = cfg?.pollIntervalMs ?? DEFAULT_VERIFY_POLL_INTERVAL_MS;
 
 const commands = enabled ? [verify, unverify, verifyAdmin] : [];
@@ -23,14 +25,14 @@ export const verifyPlugin: DiscordPlugin = {
   description: "NFT holder verification: SIWE / delegate.cash / OpenSea bio",
   enabled,
   init: async (ctx) => {
-    if (!cfg) return;
+    if (!cfg || !cfg.discord) return;
     if (!env.VERIFY_INTERNAL_SECRET) {
       ctx.errorLog(
         "VERIFY_INTERNAL_SECRET is not set; /verify commands will fail",
       );
     }
     ctx.log(
-      `enabled (role=${cfg.roleId}, poll=${intervalMs}ms, delegate=${
+      `enabled (role=${cfg.discord.roleId}, poll=${intervalMs}ms, delegate=${
         cfg.delegateCash !== false
       }, bio=${cfg.openseaBio === true})`,
     );
@@ -45,7 +47,7 @@ export const verifyPlugin: DiscordPlugin = {
             await drainRoleEvents({
               client: ctx.client,
               ctx,
-              roleId: cfg!.roleId,
+              roleId: cfg!.discord!.roleId,
             });
           },
         },

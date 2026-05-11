@@ -193,13 +193,15 @@ Resolution order:
 
 ## Holder verification
 
-Optional feature, off by default. When enabled, the bot grants a Discord role to users who can prove on-chain ownership of at least one NFT in `cfg.primary` (or its wrapper if configured). The role is reconciled in real time from on-chain `Transfer` events.
+Optional feature, off by default. When enabled, configured bots reconcile holder access for users who can prove on-chain ownership of at least one NFT in `cfg.primary` (or its wrapper if configured). On Discord that's a role grant or removal; on Telegram it's a single-use chat invite or a kick from the gated supergroup. Access is reconciled in real time from on-chain `Transfer` events.
+
+Either Discord, Telegram, or both can be configured. The schema is platform-agnostic (`platform`, `platform_user_id`, `platform_scope_id`), and each bot only drains `role_events` for its own platform.
 
 ### Methods
 
 | Method | Signature required? | Notes |
 | --- | --- | --- |
-| **SIWE** (EIP-4361) | yes (hot wallet that holds) | Default path. The wallet signs a message bound to the user's discord id and a server nonce. |
+| **SIWE** (EIP-4361) | yes (hot wallet that holds) | Default path. The wallet signs a message bound to the user's platform id (Discord or Telegram) and a server nonce. |
 | **delegate.cash v2** | yes (hot wallet acting for cold) | Layered on SIWE or bio. Server live-checks the registry; only `delegateAll` and `delegateContract` are accepted (token-scoped delegations are rejected). Works for primary OR wrapper delegation when both are configured. |
 | **OpenSea bio** | no | Off by default; requires `OPENSEA_API_KEY`. The bot generates a one-time code; the user pastes it in their OpenSea profile bio; the indexer fetches the bio and matches. |
 
@@ -210,6 +212,12 @@ All three methods enter through the same web page (`packages/verify-web`); the u
 A persistent embedded message is the canonical entrypoint. After admins post it once with `/verify-admin post`, members click a **Verify** button and get an ephemeral message with their personal verification link. The page handles SIWE, delegate.cash, and OpenSea bio in tabs.
 
 A fallback `/verify` slash command exists for users who prefer a command path; it produces the same ephemeral link without the embed.
+
+### Telegram flow
+
+Users DM the bot and run `/verify` (group chats are silently ignored to avoid leaking single-use tokens). The bot replies with the same verification URL as the Discord flow. After a successful sign, the indexer queues a `grant` event; the bot drains it, creates a single-use chat invite link via the Telegram Bot API (`member_limit: 1`, short expiry), and DMs the link to the user.
+
+When a Transfer drops a verified holder to zero balance, the indexer queues a `revoke` event. The bot calls `banChatMember` (kick) immediately followed by `unbanChatMember(only_if_banned=true)` so the user is removed but can rejoin after re-verifying. Set `verify.telegram.kickSemantics: false` to leave the ban sticky and require a manual unban.
 
 ### Per-link revocation policy
 
@@ -225,11 +233,18 @@ If the private key of a linked wallet is sold or compromised *without an on-chai
 
 End-to-end runbook for deploying with verification enabled. If you don't want verification, skip steps 3, 4, 6, 7 and just run `docker compose up -d --build`.
 
-### 1. Discord setup
+### 1. Discord setup (skip if you're only using Telegram)
 
 - Create a bot in the [Discord Developer Portal](https://discord.com/developers/applications) and invite it to your guild with at least `applications.commands` + `bot` scope and `Manage Roles` + `Send Messages` + `Embed Links` permissions.
 - Create the holder role in your guild. **Move the bot's role above it** in the role list. Discord only lets a bot manage roles below its own highest role.
 - (Optional, only needed for `/verify-admin sweep`) In the Dev Portal: Bot → toggle **SERVER MEMBERS INTENT** on. The bot config already requests it; without the toggle, the sweep command will fail with a clear error.
+
+### 1b. Telegram setup (skip if you're only using Discord)
+
+- Create a bot with [@BotFather](https://t.me/BotFather): `/newbot`, give it a name and username, copy the token.
+- Disable group privacy so the bot can read group messages it isn't directly @-mentioned in: `/setprivacy` → select your bot → **Disable**. Not strictly required for the verify flow (commands are DM-only) but recommended for future features.
+- Create a private supergroup that will be your gated holders chat. Add the bot to it as **admin** with **Invite Users via Link** and **Ban Users** permissions enabled.
+- Get the chat id: send any message in the group, then visit `https://api.telegram.org/bot<TOKEN>/getUpdates` (replace `<TOKEN>` with your bot token). Look for `"chat":{"id":-100…}` in the JSON response. That negative number is your chat id.
 
 ### 2. Config + env
 
@@ -242,17 +257,24 @@ Fill in your collection details in `abotbasho.config.ts`. Fill in `PONDER_RPC_UR
 
 ### 3. Enable verification (optional)
 
-Add a `verify` block to `abotbasho.config.ts`:
+Add a `verify` block to `abotbasho.config.ts`. At least one of `discord` or `telegram` is required when `enabled: true`. Set both to support both platforms in parallel.
 
 ```ts
 verify: {
   enabled: true,
-  roleId: "<discord role id>",
   publicUrl: "https://verify.example.xyz",
   delegateCash: true,
   // openseaBio: true,        // enables the OS-bio path
   // openseaSlug: "my-coll",
   // sourceCodeUrl: "https://github.com/your-fork/abotbasho",
+  discord: {
+    roleId: "<discord role id>",
+  },
+  // telegram: {
+  //   chatId: "-1001234567890",      // from step 1b
+  //   inviteLinkExpirySec: 600,      // single-use invite TTL, default 600
+  //   kickSemantics: true,           // ban + unban so re-verify can rejoin
+  // },
 }
 ```
 
@@ -262,6 +284,7 @@ Add to `.env`:
 echo "VERIFY_INTERNAL_SECRET=$(openssl rand -hex 32)" >> .env
 echo "WALLETCONNECT_PROJECT_ID=<from cloud.reown.com>" >> .env
 echo "PUBLIC_INDEXER_CHAIN_ID=1" >> .env
+# echo "TELEGRAM_BOT_TOKEN=<from @BotFather>" >> .env    # only if verify.telegram is set
 # echo "OPENSEA_API_KEY=<from docs.opensea.io>" >> .env  # only if openseaBio: true
 # echo "VERIFY_WEB_HOST_PORT=3004" >> .env               # only if host port 3000 is taken
 ```
@@ -306,14 +329,17 @@ sudo certbot --nginx -d verify.example.xyz
 
 ```sh
 docker compose --profile verify up -d --build
+# Add --profile telegram if verify.telegram is configured:
+# docker compose --profile verify --profile telegram up -d --build
 docker compose --profile verify logs -f indexer discord verify-web
 ```
 
-Without `--profile verify`, only the indexer + bots come up; the `verify-web` container stays off.
+Without `--profile verify`, only the indexer + bots come up; the `verify-web` container stays off. The `telegram` service is opt-in via its own profile to keep Discord-only deployments unchanged.
 
 Wait for:
 - `indexer`: `Started returning 200 responses from /ready endpoint`
 - `discord`: `[plugin:verify] enabled (role=..., poll=5000ms, ...)`
+- `telegram` (if enabled): `[telegram] logged in as @<botname>` and `[telegram] verify poller running every 5000ms for chat <chatId>`
 - `verify-web`: should log nothing notable. Confirm with `curl -sI https://verify.example.xyz | head -1` returning `HTTP/2 200` (or 404 on root, which is correct since only `/v/<token>` is a real route).
 
 ### 6. Post the verification embed

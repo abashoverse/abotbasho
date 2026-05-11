@@ -128,9 +128,9 @@ export const verifyAdmin = {
 
     if (sub === "sweep") {
       const cfg = getProjectConfig();
-      const roleId = cfg.verify?.roleId;
+      const roleId = cfg.verify?.discord?.roleId;
       if (!roleId) {
-        await interaction.editReply("verify.roleId not configured.");
+        await interaction.editReply("verify.discord.roleId not configured.");
         return;
       }
       const mode = interaction.options.getString("mode", true) as
@@ -333,7 +333,7 @@ export const verifyAdmin = {
           guildId: interaction.guildId,
         });
         const cfg = getProjectConfig();
-        const roleId = cfg.verify?.roleId;
+        const roleId = cfg.verify?.discord?.roleId;
         if (roleId) {
           const r = await applyRoleEvent(interaction.client, {
             guildId: interaction.guildId,

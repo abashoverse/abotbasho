@@ -6,6 +6,7 @@ const indexerUrl = (): string => {
 };
 
 export interface SessionInfo {
+  platform: "discord" | "telegram";
   nonce: string;
   statement: string;
   domain: string;

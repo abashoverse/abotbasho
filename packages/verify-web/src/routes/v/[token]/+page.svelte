@@ -223,6 +223,16 @@
     }
   };
 
+  const platformLabel = $derived(
+    data.session.platform === "telegram" ? "Telegram" : "Discord",
+  );
+
+  const successCopy = $derived(
+    data.session.platform === "telegram"
+      ? "Your single-use chat invite will arrive as a Telegram DM from the bot shortly."
+      : "The role appears in Discord shortly.",
+  );
+
   const errorLabel = (e: string): string => {
     switch (e) {
       case "no_holdings":
@@ -232,7 +242,7 @@
       case "delegate_cash_disabled":
         return "delegate.cash is disabled for this server.";
       case "invalid_or_expired":
-        return "Verification link expired or already used. Run /verify in Discord again.";
+        return `Verification link expired or already used. Run /verify in ${platformLabel} again.`;
       case "bio_disabled":
         return "OpenSea bio verification is not enabled for this server.";
       case "bio_misconfigured":
@@ -271,7 +281,7 @@
         <code title={success.holder}>{shortAddr(success.holder)}</code>
         is now linked
         <span class="muted">({success.method})</span>. You can close this tab.
-        The role appears in Discord shortly.
+        {successCopy}
       </p>
     </section>
   {:else}

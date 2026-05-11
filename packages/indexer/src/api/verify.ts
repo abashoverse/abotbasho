@@ -279,8 +279,11 @@ verifyApp.get("/session/:token", rateLimitPublic, async (c) => {
   // response. The page doesn't need them client-side; the SIWE statement
   // (which includes the platform-bound id) is server-built. Keeps the URL
   // token from implicitly disclosing the bound user/scope to anyone who
-  // opens it.
+  // opens it. `platform` IS exposed so the page can render platform-aware
+  // copy ("Run /verify in Discord/Telegram again"), which is much less
+  // sensitive than the user id itself.
   return c.json({
+    platform: row.platform,
     nonce: row.nonce,
     statement: buildSiweStatement(
       cfg.project.name,
