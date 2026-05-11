@@ -42,6 +42,7 @@ export const applyAccessEvent = async (
     desiredState: "grant" | "revoke";
     inviteLinkExpirySec: number;
     kickSemantics: boolean;
+    notifyChatOnUnkickable: boolean;
   },
 ): Promise<AccessApplyResult> => {
   if (params.desiredState === "grant") {
@@ -93,6 +94,22 @@ export const applyAccessEvent = async (
       // Chat owner or admin. The bot can't kick them; retrying won't help.
       // Mark applied so the poller stops looping; the operator sees this
       // surfaced via the log line on the next drain.
+      if (params.notifyChatOnUnkickable) {
+        try {
+          await bot.api.sendMessage(
+            params.chatId,
+            `<a href="tg://user?id=${params.userId}">This user</a> no longer holds a qualifying NFT, but the bot can't kick chat owners or admins. They remain in the chat.`,
+            { parse_mode: "HTML" },
+          );
+        } catch (notifyErr) {
+          // Don't let notification failure surface; the revoke is "applied"
+          // either way and the operator already has the log line.
+          console.error(
+            "[telegram] notifyChatOnUnkickable sendMessage failed:",
+            notifyErr,
+          );
+        }
+      }
       return { ok: true, reason: "user_is_owner_or_admin_unkickable" };
     }
     return { ok: false, reason: `banChatMember_failed: ${msg}` };

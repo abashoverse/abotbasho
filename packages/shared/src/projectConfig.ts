@@ -55,6 +55,14 @@ export interface VerifyTelegramConfig {
    * sticky ban that requires manual unban.
    */
   kickSemantics?: boolean;
+  /**
+   * If true, the bot posts an explanatory message in the gated chat
+   * instead of silently logging when a revoke target is the chat owner
+   * or an admin (and therefore unkickable). Useful for local testing
+   * without a second Telegram account. Default false to keep production
+   * chats quiet.
+   */
+  notifyChatOnUnkickable?: boolean;
 }
 
 export interface VerifyConfig {

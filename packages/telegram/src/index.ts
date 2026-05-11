@@ -167,6 +167,7 @@ if (verifyEnabled && telegramCfg) {
       chatId: telegramCfg.chatId,
       inviteLinkExpirySec: telegramCfg.inviteLinkExpirySec ?? 600,
       kickSemantics: telegramCfg.kickSemantics !== false,
+      notifyChatOnUnkickable: telegramCfg.notifyChatOnUnkickable === true,
       log: (...args) => console.log("[telegram poller]", ...args),
       errorLog: (...args) => console.error("[telegram poller]", ...args),
     }).catch((err) => console.error("[telegram poller] drain failed:", err));

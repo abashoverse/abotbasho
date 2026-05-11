@@ -18,6 +18,7 @@ export interface DrainArgs {
   chatId: string;
   inviteLinkExpirySec: number;
   kickSemantics: boolean;
+  notifyChatOnUnkickable: boolean;
   log: (...args: unknown[]) => void;
   errorLog: (...args: unknown[]) => void;
 }
@@ -78,6 +79,7 @@ export const drainRoleEvents = async (cfg: DrainArgs): Promise<void> => {
       desiredState: last.desired_state,
       inviteLinkExpirySec: cfg.inviteLinkExpirySec,
       kickSemantics: cfg.kickSemantics,
+      notifyChatOnUnkickable: cfg.notifyChatOnUnkickable,
     });
     if (!result.ok) {
       cfg.errorLog(

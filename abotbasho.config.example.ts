@@ -63,6 +63,7 @@ export default defineConfig({
   //     chatId: "-1001234567890",       // gated supergroup id; bot must be admin with Invite + Ban perms
   //     inviteLinkExpirySec: 600,       // single-use invite TTL (default 600)
   //     kickSemantics: true,            // ban + immediate unban so a re-verified user can rejoin
+  //     notifyChatOnUnkickable: false,  // dev only: post a chat notice instead of silent log when target is owner/admin
   //   },
   // },
   // Per-plugin configuration. Each plugin owns its slice and validates it
