@@ -1,4 +1,4 @@
-import { Bot, type Context } from "grammy";
+import { Bot, type Context, InlineKeyboard } from "grammy";
 import {
   DEFAULT_VERIFY_POLL_INTERVAL_MS,
   getProjectConfig,
@@ -53,16 +53,20 @@ if (verifyEnabled && telegramCfg) {
         telegramUserId: String(ctx.from.id),
         chatId: telegramCfg.chatId,
       });
+      const keyboard = new InlineKeyboard().url(
+        "Open verification page",
+        url,
+      );
       await ctx.reply(
         [
           `Sign in to verify your ${cfg.project.name} holdings.`,
           ``,
-          `Open the link below (valid for 10 minutes):`,
-          url,
-          ``,
-          `delegate.cash hot/cold delegation is supported on the page.`,
+          `The link below is valid for 10 minutes. delegate.cash hot/cold delegation is supported on the page.`,
         ].join("\n"),
-        { link_preview_options: { is_disabled: true } },
+        {
+          reply_markup: keyboard,
+          link_preview_options: { is_disabled: true },
+        },
       );
     } catch (err) {
       console.error("[telegram /verify] startSiwe failed:", err);

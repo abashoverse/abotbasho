@@ -1,4 +1,4 @@
-import { Bot, GrammyError } from "grammy";
+import { Bot, GrammyError, InlineKeyboard } from "grammy";
 
 export interface AccessApplyResult {
   ok: boolean;
@@ -50,11 +50,16 @@ export const applyAccessEvent = async (
       return { ok: false, reason: `createChatInviteLink_failed: ${msg}` };
     }
     try {
+      const keyboard = new InlineKeyboard().url(
+        "Join holders group",
+        inviteLink,
+      );
       await bot.api.sendMessage(
         params.userId,
         `Verified. Your single-use invite (expires in ${Math.round(
           params.inviteLinkExpirySec / 60,
-        )} min):\n${inviteLink}`,
+        )} min). Tap the button below to join.`,
+        { reply_markup: keyboard },
       );
     } catch (err) {
       // Most common cause: user never DMed the bot before /verify (shouldn't
