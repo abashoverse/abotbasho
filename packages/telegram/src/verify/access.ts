@@ -10,6 +10,15 @@ const isNotParticipantError = (msg: string): boolean =>
     msg,
   );
 
+// Telegram refuses to ban the chat owner and (by default) other admins.
+// These rejections are permanent: retrying won't change the outcome. We
+// surface them as "applied with caveat" so the poller stops looping and
+// the operator sees the actual constraint in the audit logs.
+const isPermanentlyUnkickable = (msg: string): boolean =>
+  /can't remove chat owner|chat_admin_required|user is an administrator/i.test(
+    msg,
+  );
+
 /**
  * Apply a grant or revoke to the gated chat.
  *
@@ -79,6 +88,12 @@ export const applyAccessEvent = async (
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof GrammyError && isNotParticipantError(msg)) {
       return { ok: true, reason: "user_not_in_chat" };
+    }
+    if (err instanceof GrammyError && isPermanentlyUnkickable(msg)) {
+      // Chat owner or admin. The bot can't kick them; retrying won't help.
+      // Mark applied so the poller stops looping; the operator sees this
+      // surfaced via the log line on the next drain.
+      return { ok: true, reason: "user_is_owner_or_admin_unkickable" };
     }
     return { ok: false, reason: `banChatMember_failed: ${msg}` };
   }
