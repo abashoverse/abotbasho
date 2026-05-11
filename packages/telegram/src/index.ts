@@ -31,6 +31,27 @@ const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
 // are silently ignored.
 const inDm = (ctx: Context): boolean => ctx.chat?.type === "private";
 
+// Telegram's Bot API rejects any non-public URL in inline keyboard buttons
+// with "Bad Request: Wrong HTTP URL". https + a real hostname is the only
+// thing it accepts. For local dev (http://localhost...) we fall back to
+// sending the URL as plain text so the user can copy/paste. Production
+// (https://verify.example.xyz) gets the tap-target button.
+const isTelegramButtonCompatibleUrl = (u: string): boolean => {
+  try {
+    const parsed = new URL(u);
+    if (parsed.protocol !== "https:") return false;
+    const host = parsed.hostname;
+    if (host === "localhost" || host === "0.0.0.0") return false;
+    if (/^127\./.test(host)) return false;
+    if (/^10\./.test(host)) return false;
+    if (/^192\.168\./.test(host)) return false;
+    if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(host)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 bot.command("start", async (ctx) => {
   if (!inDm(ctx)) return;
   if (verifyEnabled) {
@@ -53,21 +74,40 @@ if (verifyEnabled && telegramCfg) {
         telegramUserId: String(ctx.from.id),
         chatId: telegramCfg.chatId,
       });
-      const keyboard = new InlineKeyboard().url(
-        "Open verification page",
-        url,
-      );
-      await ctx.reply(
-        [
-          `Sign in to verify your ${cfg.project.name} holdings.`,
-          ``,
-          `The link below is valid for 10 minutes. delegate.cash hot/cold delegation is supported on the page.`,
-        ].join("\n"),
-        {
-          reply_markup: keyboard,
-          link_preview_options: { is_disabled: true },
-        },
-      );
+      const header = `Sign in to verify your ${cfg.project.name} holdings.`;
+      const footer = `delegate.cash hot/cold delegation is supported on the page.`;
+      if (isTelegramButtonCompatibleUrl(url)) {
+        const keyboard = new InlineKeyboard().url(
+          "Open verification page",
+          url,
+        );
+        await ctx.reply(
+          [header, ``, `Tap the button below (valid for 10 minutes).`, ``, footer].join(
+            "\n",
+          ),
+          {
+            reply_markup: keyboard,
+            link_preview_options: { is_disabled: true },
+          },
+        );
+      } else {
+        // Telegram won't accept localhost / private URLs in keyboard buttons.
+        // Send as plain text; the user can copy/paste during local dev.
+        console.warn(
+          `[telegram /verify] non-public URL (${url}); sending plain text. For clickable buttons in local testing, expose verify-web via a tunnel (ngrok / cloudflare tunnel) and set verify.publicUrl accordingly.`,
+        );
+        await ctx.reply(
+          [
+            header,
+            ``,
+            `Open this link (valid for 10 minutes):`,
+            url,
+            ``,
+            footer,
+          ].join("\n"),
+          { link_preview_options: { is_disabled: true } },
+        );
+      }
     } catch (err) {
       console.error("[telegram /verify] startSiwe failed:", err);
       await ctx.reply("Verification is currently unavailable.");
