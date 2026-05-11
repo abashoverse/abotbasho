@@ -9,9 +9,14 @@ import {
   consumeLinkToken,
   issueLinkToken,
   peekLinkToken,
+  type Platform,
   SiweVerifyError,
   verifySiwe,
 } from "../verification/siwe.js";
+
+const PLATFORMS: readonly Platform[] = ["discord", "telegram"] as const;
+const isPlatform = (v: unknown): v is Platform =>
+  typeof v === "string" && (PLATFORMS as readonly string[]).includes(v);
 import { isDelegatedHolderOf } from "../verification/delegate.js";
 import {
   bioContainsCode,
@@ -160,7 +165,8 @@ const addrToBytes = (addr: Address): Buffer =>
 const audit = async (
   pool: Pool,
   params: {
-    discordUserId?: string;
+    platform?: Platform;
+    platformUserId?: string;
     holderAddress?: Address;
     signerAddress?: Address;
     method?: string;
@@ -170,10 +176,11 @@ const audit = async (
 ): Promise<void> => {
   await pool.query(
     `INSERT INTO verification.audit
-       (discord_user_id, holder_address, signer_address, method, action, detail)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+       (platform, platform_user_id, holder_address, signer_address, method, action, detail)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [
-      params.discordUserId ?? null,
+      params.platform ?? null,
+      params.platformUserId ?? null,
       params.holderAddress ? addrToBytes(params.holderAddress) : null,
       params.signerAddress ? addrToBytes(params.signerAddress) : null,
       params.method ?? null,
@@ -186,8 +193,9 @@ const audit = async (
 const insertOrRefreshLink = async (
   pool: Pool,
   params: {
-    discordUserId: string;
-    guildId: string;
+    platform: Platform;
+    platformUserId: string;
+    platformScopeId: string;
     holderAddress: Address;
     signerAddress?: Address;
     method: "siwe" | "delegate" | "bio";
@@ -195,25 +203,31 @@ const insertOrRefreshLink = async (
 ): Promise<void> => {
   await pool.query(
     `INSERT INTO verification.links
-       (discord_user_id, holder_address, signer_address, method, guild_id)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (discord_user_id, holder_address) DO UPDATE SET
+       (platform, platform_user_id, holder_address, signer_address, method, platform_scope_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (platform, platform_user_id, holder_address) DO UPDATE SET
        signer_address = EXCLUDED.signer_address,
        method = EXCLUDED.method,
        last_checked_at = now()`,
     [
-      params.discordUserId,
+      params.platform,
+      params.platformUserId,
       addrToBytes(params.holderAddress),
       params.signerAddress ? addrToBytes(params.signerAddress) : null,
       params.method,
-      params.guildId,
+      params.platformScopeId,
     ],
   );
   await pool.query(
     `INSERT INTO verification.role_events
-       (discord_user_id, guild_id, desired_state, reason)
-     VALUES ($1, $2, 'grant', $3)`,
-    [params.discordUserId, params.guildId, params.method],
+       (platform, platform_user_id, platform_scope_id, desired_state, reason)
+     VALUES ($1, $2, $3, 'grant', $4)`,
+    [
+      params.platform,
+      params.platformUserId,
+      params.platformScopeId,
+      params.method,
+    ],
   );
 };
 
@@ -224,22 +238,31 @@ const verifyApp = new Hono();
 verifyApp.use("/*", verifyEnabledGate);
 
 verifyApp.post("/start", requireVerifyAuth, async (c) => {
-  const body = await c.req.json<{ discord_user_id?: string; guild_id?: string }>();
-  const discordUserId = body.discord_user_id;
-  const guildId = body.guild_id;
-  if (!discordUserId || !guildId) {
-    return c.json({ error: "discord_user_id_and_guild_id_required" }, 400);
+  const body = await c.req.json<{
+    platform?: string;
+    platform_user_id?: string;
+    platform_scope_id?: string;
+  }>();
+  const platform = body.platform;
+  const platformUserId = body.platform_user_id;
+  const platformScopeId = body.platform_scope_id;
+  if (!isPlatform(platform) || !platformUserId || !platformScopeId) {
+    return c.json(
+      { error: "platform_platform_user_id_platform_scope_id_required" },
+      400,
+    );
   }
-  if (!tryConsumeRate(`start:${discordUserId}`, 5, 5 / 60)) {
+  if (!tryConsumeRate(`start:${platform}:${platformUserId}`, 5, 5 / 60)) {
     return c.json({ error: "rate_limited" }, 429);
   }
   const pool = await getVerificationPool();
   const { token, expiresAt } = await issueLinkToken(pool, {
-    discordUserId,
-    guildId,
+    platform,
+    platformUserId,
+    platformScopeId,
     ttlSec: 600,
   });
-  await audit(pool, { discordUserId, action: "siwe_started" });
+  await audit(pool, { platform, platformUserId, action: "siwe_started" });
   return c.json({
     url: buildPublicVerifyUrl(token),
     expires_at: expiresAt.toISOString(),
@@ -252,13 +275,18 @@ verifyApp.get("/session/:token", rateLimitPublic, async (c) => {
   const pool = await getVerificationPool();
   const row = await peekLinkToken(pool, token);
   if (!row) return c.json({ error: "invalid_or_expired" }, 404);
-  // discord_user_id and guild_id are intentionally NOT in the response.
-  // The page doesn't need them client-side; the SIWE statement (which
-  // includes the discord id) is server-built. Keeps the URL token from
-  // implicitly disclosing the bound discord/guild to anyone who opens it.
+  // platform_user_id and platform_scope_id are intentionally NOT in the
+  // response. The page doesn't need them client-side; the SIWE statement
+  // (which includes the platform-bound id) is server-built. Keeps the URL
+  // token from implicitly disclosing the bound user/scope to anyone who
+  // opens it.
   return c.json({
     nonce: row.nonce,
-    statement: buildSiweStatement(cfg.project.name, row.discordUserId),
+    statement: buildSiweStatement(
+      cfg.project.name,
+      row.platform,
+      row.platformUserId,
+    ),
     domain: domainOf(),
     chain_id: chain.id,
     project_name: cfg.project.name,
@@ -288,7 +316,8 @@ verifyApp.post("/finalize-siwe", rateLimitPublic, async (c) => {
 
   const expectedStatement = buildSiweStatement(
     cfg.project.name,
-    tokenRow.discordUserId,
+    tokenRow.platform,
+    tokenRow.platformUserId,
   );
   let signer: Address;
   try {
@@ -304,7 +333,8 @@ verifyApp.post("/finalize-siwe", rateLimitPublic, async (c) => {
   } catch (err) {
     const reason = err instanceof SiweVerifyError ? err.reason : "verify_failed";
     await audit(pool, {
-      discordUserId: tokenRow.discordUserId,
+      platform: tokenRow.platform,
+      platformUserId: tokenRow.platformUserId,
       action: "siwe_rejected",
       detail: reason,
     });
@@ -316,7 +346,8 @@ verifyApp.post("/finalize-siwe", rateLimitPublic, async (c) => {
   if (body.delegated_from) {
     if (verifyCfg!.delegateCash === false) {
       await audit(pool, {
-        discordUserId: tokenRow.discordUserId,
+        platform: tokenRow.platform,
+        platformUserId: tokenRow.platformUserId,
         signerAddress: signer,
         action: "delegate_rejected",
         detail: "delegate_cash_disabled",
@@ -334,7 +365,8 @@ verifyApp.post("/finalize-siwe", rateLimitPublic, async (c) => {
     });
     if (!ok) {
       await audit(pool, {
-        discordUserId: tokenRow.discordUserId,
+        platform: tokenRow.platform,
+        platformUserId: tokenRow.platformUserId,
         signerAddress: signer,
         holderAddress: cold,
         action: "delegate_rejected",
@@ -352,7 +384,8 @@ verifyApp.post("/finalize-siwe", rateLimitPublic, async (c) => {
   const balance = await balanceAcross(holder);
   if (balance <= 0n) {
     await audit(pool, {
-      discordUserId: tokenRow.discordUserId,
+      platform: tokenRow.platform,
+      platformUserId: tokenRow.platformUserId,
       holderAddress: holder,
       signerAddress: signer,
       method,
@@ -368,14 +401,16 @@ verifyApp.post("/finalize-siwe", rateLimitPublic, async (c) => {
   if (!consumed) return c.json({ error: "invalid_or_expired" }, 404);
 
   await insertOrRefreshLink(pool, {
-    discordUserId: consumed.discordUserId,
-    guildId: consumed.guildId,
+    platform: consumed.platform,
+    platformUserId: consumed.platformUserId,
+    platformScopeId: consumed.platformScopeId,
     holderAddress: holder,
     signerAddress: signer,
     method,
   });
   await audit(pool, {
-    discordUserId: consumed.discordUserId,
+    platform: consumed.platform,
+    platformUserId: consumed.platformUserId,
     holderAddress: holder,
     signerAddress: signer,
     method,
@@ -400,11 +435,13 @@ verifyApp.post("/bio/start", rateLimitPublic, async (c) => {
   if (!tokenRow) return c.json({ error: "invalid_or_expired" }, 404);
 
   const { code, expiresAt } = await issueBioCode(pool, {
-    discordUserId: tokenRow.discordUserId,
-    guildId: tokenRow.guildId,
+    platform: tokenRow.platform,
+    platformUserId: tokenRow.platformUserId,
+    platformScopeId: tokenRow.platformScopeId,
   });
   await audit(pool, {
-    discordUserId: tokenRow.discordUserId,
+    platform: tokenRow.platform,
+    platformUserId: tokenRow.platformUserId,
     action: "bio_started",
   });
   return c.json({ code, expires_at: expiresAt.toISOString() });
@@ -429,10 +466,15 @@ verifyApp.post("/finalize-bio", rateLimitPublic, async (c) => {
   const tokenRow = await peekLinkToken(pool, body.token);
   if (!tokenRow) return c.json({ error: "invalid_or_expired" }, 404);
 
-  const stored = await findBioCodeForUser(pool, tokenRow.discordUserId);
+  const stored = await findBioCodeForUser(
+    pool,
+    tokenRow.platform,
+    tokenRow.platformUserId,
+  );
   if (!stored || !matchBioCode(body.code, stored.codeHash)) {
     await audit(pool, {
-      discordUserId: tokenRow.discordUserId,
+      platform: tokenRow.platform,
+      platformUserId: tokenRow.platformUserId,
       action: "bio_rejected",
       detail: "code_mismatch_or_expired",
     });
@@ -443,7 +485,8 @@ verifyApp.post("/finalize-bio", rateLimitPublic, async (c) => {
   const bio = await fetchOpenseaBio(bioWallet);
   if (!bioContainsCode(bio, body.code)) {
     await audit(pool, {
-      discordUserId: tokenRow.discordUserId,
+      platform: tokenRow.platform,
+      platformUserId: tokenRow.platformUserId,
       holderAddress: bioWallet,
       action: "bio_rejected",
       detail: "code_not_in_bio",
@@ -460,7 +503,8 @@ verifyApp.post("/finalize-bio", rateLimitPublic, async (c) => {
   if (body.delegated_from) {
     if (verifyCfg!.delegateCash === false) {
       await audit(pool, {
-        discordUserId: tokenRow.discordUserId,
+        platform: tokenRow.platform,
+        platformUserId: tokenRow.platformUserId,
         signerAddress: bioWallet,
         action: "delegate_rejected",
         detail: "delegate_cash_disabled",
@@ -478,7 +522,8 @@ verifyApp.post("/finalize-bio", rateLimitPublic, async (c) => {
     });
     if (!ok) {
       await audit(pool, {
-        discordUserId: tokenRow.discordUserId,
+        platform: tokenRow.platform,
+        platformUserId: tokenRow.platformUserId,
         signerAddress: bioWallet,
         holderAddress: cold,
         action: "delegate_rejected",
@@ -497,7 +542,8 @@ verifyApp.post("/finalize-bio", rateLimitPublic, async (c) => {
   const balance = await balanceAcross(holder);
   if (balance <= 0n) {
     await audit(pool, {
-      discordUserId: tokenRow.discordUserId,
+      platform: tokenRow.platform,
+      platformUserId: tokenRow.platformUserId,
       holderAddress: holder,
       signerAddress: signer,
       method,
@@ -512,14 +558,16 @@ verifyApp.post("/finalize-bio", rateLimitPublic, async (c) => {
   if (!consumed) return c.json({ error: "invalid_or_expired" }, 404);
 
   await insertOrRefreshLink(pool, {
-    discordUserId: consumed.discordUserId,
-    guildId: consumed.guildId,
+    platform: consumed.platform,
+    platformUserId: consumed.platformUserId,
+    platformScopeId: consumed.platformScopeId,
     holderAddress: holder,
     signerAddress: signer,
     method,
   });
   await audit(pool, {
-    discordUserId: consumed.discordUserId,
+    platform: consumed.platform,
+    platformUserId: consumed.platformUserId,
     holderAddress: holder,
     signerAddress: signer,
     method,
@@ -528,38 +576,60 @@ verifyApp.post("/finalize-bio", rateLimitPublic, async (c) => {
   // Tidy: drop any outstanding bio codes for this user. They're only useful
   // before linking; rows would otherwise sit until 24h TTL expiry.
   await pool.query(
-    `DELETE FROM verification.bio_codes WHERE discord_user_id = $1`,
-    [consumed.discordUserId],
+    `DELETE FROM verification.bio_codes WHERE platform = $1 AND platform_user_id = $2`,
+    [consumed.platform, consumed.platformUserId],
   );
   return c.json({ ok: true, holder_address: holder, method });
 });
 
 verifyApp.get("/all-links", requireVerifyAuth, async (c) => {
-  // Aggregated list of every discord user with at least one verification.links
-  // row. Used by /verify-admin list (visibility) and /verify-admin sweep
-  // (cross-reference against role holders during transition).
+  // Aggregated list of every (platform, user) with at least one
+  // verification.links row. Used by /verify-admin list (visibility) and
+  // /verify-admin sweep (cross-reference against role holders during transition).
+  // Optional ?platform=<p> filter keeps platform-specific bots from having to
+  // scan rows that don't belong to them.
+  const platformFilter = c.req.query("platform");
+  if (platformFilter && !isPlatform(platformFilter)) {
+    return c.json({ error: "invalid_platform" }, 400);
+  }
   const pool = await getVerificationPool();
   const { rows } = await pool.query<{
-    discord_user_id: string;
+    platform: Platform;
+    platform_user_id: string;
     wallets: string;
     methods: string[];
     first_verified: Date;
     last_checked: Date;
   }>(
-    `SELECT
-       discord_user_id,
-       COUNT(*)::text AS wallets,
-       ARRAY_AGG(DISTINCT method) AS methods,
-       MIN(verified_at) AS first_verified,
-       MAX(last_checked_at) AS last_checked
-     FROM verification.links
-     GROUP BY discord_user_id
-     ORDER BY first_verified ASC`,
+    platformFilter
+      ? `SELECT
+           platform,
+           platform_user_id,
+           COUNT(*)::text AS wallets,
+           ARRAY_AGG(DISTINCT method) AS methods,
+           MIN(verified_at) AS first_verified,
+           MAX(last_checked_at) AS last_checked
+         FROM verification.links
+         WHERE platform = $1
+         GROUP BY platform, platform_user_id
+         ORDER BY first_verified ASC`
+      : `SELECT
+           platform,
+           platform_user_id,
+           COUNT(*)::text AS wallets,
+           ARRAY_AGG(DISTINCT method) AS methods,
+           MIN(verified_at) AS first_verified,
+           MAX(last_checked_at) AS last_checked
+         FROM verification.links
+         GROUP BY platform, platform_user_id
+         ORDER BY first_verified ASC`,
+    platformFilter ? [platformFilter] : [],
   );
   return c.json({
     total: rows.length,
     users: rows.map((r) => ({
-      discord_user_id: r.discord_user_id,
+      platform: r.platform,
+      platform_user_id: r.platform_user_id,
       wallets: Number(r.wallets),
       methods: r.methods,
       first_verified: r.first_verified.toISOString(),
@@ -574,27 +644,42 @@ verifyApp.get("/role-events", requireVerifyAuth, async (c) => {
     Math.max(parseInt(c.req.query("limit") ?? "100", 10) || 100, 1),
     500,
   );
+  // Bots filter on their own platform so each consumer only drains its own
+  // events. ?platform=discord on the discord bot, ?platform=telegram on the
+  // telegram bot. Without the filter, the response includes all platforms.
+  const platformFilter = c.req.query("platform");
+  if (platformFilter && !isPlatform(platformFilter)) {
+    return c.json({ error: "invalid_platform" }, 400);
+  }
   const pool = await getVerificationPool();
   const { rows } = await pool.query<{
     id: string;
-    discord_user_id: string;
-    guild_id: string;
+    platform: Platform;
+    platform_user_id: string;
+    platform_scope_id: string;
     desired_state: "grant" | "revoke";
     reason: string;
     created_at: Date;
   }>(
-    `SELECT id::text, discord_user_id, guild_id, desired_state, reason, created_at
-     FROM verification.role_events
-     WHERE id > $1 AND applied_at IS NULL
-     ORDER BY id ASC
-     LIMIT $2`,
-    [since, limit],
+    platformFilter
+      ? `SELECT id::text, platform, platform_user_id, platform_scope_id, desired_state, reason, created_at
+         FROM verification.role_events
+         WHERE id > $1 AND applied_at IS NULL AND platform = $3
+         ORDER BY id ASC
+         LIMIT $2`
+      : `SELECT id::text, platform, platform_user_id, platform_scope_id, desired_state, reason, created_at
+         FROM verification.role_events
+         WHERE id > $1 AND applied_at IS NULL
+         ORDER BY id ASC
+         LIMIT $2`,
+    platformFilter ? [since, limit, platformFilter] : [since, limit],
   );
   return c.json({
     events: rows.map((r) => ({
       id: r.id,
-      discord_user_id: r.discord_user_id,
-      guild_id: r.guild_id,
+      platform: r.platform,
+      platform_user_id: r.platform_user_id,
+      platform_scope_id: r.platform_scope_id,
       desired_state: r.desired_state,
       reason: r.reason,
       created_at: r.created_at.toISOString(),
@@ -617,50 +702,68 @@ verifyApp.patch("/role-events/:id", requireVerifyAuth, async (c) => {
 
 verifyApp.post("/unlink", requireVerifyAuth, async (c) => {
   const body = await c.req.json<{
-    discord_user_id?: string;
-    guild_id?: string;
+    platform?: string;
+    platform_user_id?: string;
+    platform_scope_id?: string;
     holder_address?: string;
   }>();
-  if (!body.discord_user_id || !body.guild_id) {
-    return c.json({ error: "discord_user_id_and_guild_id_required" }, 400);
+  const platform = body.platform;
+  const platformUserId = body.platform_user_id;
+  const platformScopeId = body.platform_scope_id;
+  if (!isPlatform(platform) || !platformUserId || !platformScopeId) {
+    return c.json(
+      { error: "platform_platform_user_id_platform_scope_id_required" },
+      400,
+    );
   }
   const pool = await getVerificationPool();
   if (body.holder_address) {
     await pool.query(
       `DELETE FROM verification.links
-       WHERE discord_user_id = $1 AND holder_address = $2`,
-      [body.discord_user_id, addrToBytes(body.holder_address as Address)],
+       WHERE platform = $1 AND platform_user_id = $2 AND holder_address = $3`,
+      [
+        platform,
+        platformUserId,
+        addrToBytes(body.holder_address as Address),
+      ],
     );
   } else {
     await pool.query(
-      `DELETE FROM verification.links WHERE discord_user_id = $1`,
-      [body.discord_user_id],
+      `DELETE FROM verification.links
+       WHERE platform = $1 AND platform_user_id = $2`,
+      [platform, platformUserId],
     );
   }
   const { rows } = await pool.query<{ exists: boolean }>(
     `SELECT EXISTS(
-       SELECT 1 FROM verification.links WHERE discord_user_id = $1
+       SELECT 1 FROM verification.links
+       WHERE platform = $1 AND platform_user_id = $2
      ) AS "exists"`,
-    [body.discord_user_id],
+    [platform, platformUserId],
   );
   if (rows[0]?.exists !== true) {
     await pool.query(
       `INSERT INTO verification.role_events
-         (discord_user_id, guild_id, desired_state, reason)
-       VALUES ($1, $2, 'revoke', 'user_unlinked')`,
-      [body.discord_user_id, body.guild_id],
+         (platform, platform_user_id, platform_scope_id, desired_state, reason)
+       VALUES ($1, $2, $3, 'revoke', 'user_unlinked')`,
+      [platform, platformUserId, platformScopeId],
     );
   }
   await audit(pool, {
-    discordUserId: body.discord_user_id,
+    platform,
+    platformUserId,
     action: "unlinked",
     detail: body.holder_address ?? "all",
   });
   return c.json({ ok: true });
 });
 
-verifyApp.get("/links/:discord_user_id", requireVerifyAuth, async (c) => {
-  const discordUserId = c.req.param("discord_user_id");
+verifyApp.get("/links/:platform/:platform_user_id", requireVerifyAuth, async (c) => {
+  const platform = c.req.param("platform");
+  const platformUserId = c.req.param("platform_user_id");
+  if (!isPlatform(platform)) {
+    return c.json({ error: "invalid_platform" }, 400);
+  }
   const pool = await getVerificationPool();
   const { rows } = await pool.query<{
     holder_address: Buffer;
@@ -671,12 +774,13 @@ verifyApp.get("/links/:discord_user_id", requireVerifyAuth, async (c) => {
   }>(
     `SELECT holder_address, signer_address, method, verified_at, last_checked_at
      FROM verification.links
-     WHERE discord_user_id = $1
+     WHERE platform = $1 AND platform_user_id = $2
      ORDER BY verified_at ASC`,
-    [discordUserId],
+    [platform, platformUserId],
   );
   return c.json({
-    discord_user_id: discordUserId,
+    platform,
+    platform_user_id: platformUserId,
     links: rows.map((r) => ({
       holder_address: `0x${r.holder_address.toString("hex")}`,
       signer_address: r.signer_address

@@ -35,7 +35,7 @@ export const drainRoleEvents = async (cfg: PollerArgs): Promise<void> => {
   // event ids applied once we apply the final state.
   const groups = new Map<string, { last: RoleEvent; ids: string[] }>();
   for (const ev of events) {
-    const k = `${ev.guild_id}:${ev.discord_user_id}`;
+    const k = `${ev.platform_scope_id}:${ev.platform_user_id}`;
     const entry = groups.get(k);
     if (entry) {
       entry.last = ev;
@@ -50,14 +50,14 @@ export const drainRoleEvents = async (cfg: PollerArgs): Promise<void> => {
     if (i > 0) await sleep(APPLY_GAP_MS);
     i++;
     const result = await applyRoleEvent(cfg.client, {
-      guildId: last.guild_id,
+      guildId: last.platform_scope_id,
       roleId: cfg.roleId,
-      userId: last.discord_user_id,
+      userId: last.platform_user_id,
       desiredState: last.desired_state,
     });
     if (!result.ok) {
       cfg.ctx.errorLog(
-        `apply ${last.desired_state} for ${last.discord_user_id} failed: ${result.reason}`,
+        `apply ${last.desired_state} for ${last.platform_user_id} failed: ${result.reason}`,
       );
       continue;
     }
@@ -69,7 +69,7 @@ export const drainRoleEvents = async (cfg: PollerArgs): Promise<void> => {
       }
     }
     cfg.ctx.log(
-      `applied ${last.desired_state} role to ${last.discord_user_id}` +
+      `applied ${last.desired_state} role to ${last.platform_user_id}` +
         (ids.length > 1 ? ` (compressed ${ids.length} events)` : ""),
     );
   }

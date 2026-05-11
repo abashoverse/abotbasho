@@ -89,6 +89,61 @@ const MIGRATIONS: Migration[] = [
         FOR EACH ROW EXECUTE FUNCTION verification.notify_link_change();
     `,
   },
+  {
+    version: 2,
+    description:
+      "generalize discord_user_id/guild_id to (platform, platform_user_id, platform_scope_id)",
+    sql: `
+      -- 1. Add platform column. DEFAULT 'discord' backfills existing rows.
+      ALTER TABLE verification.link_tokens
+        ADD COLUMN platform TEXT NOT NULL DEFAULT 'discord'
+        CHECK (platform IN ('discord','telegram'));
+      ALTER TABLE verification.links
+        ADD COLUMN platform TEXT NOT NULL DEFAULT 'discord'
+        CHECK (platform IN ('discord','telegram'));
+      ALTER TABLE verification.role_events
+        ADD COLUMN platform TEXT NOT NULL DEFAULT 'discord'
+        CHECK (platform IN ('discord','telegram'));
+      ALTER TABLE verification.bio_codes
+        ADD COLUMN platform TEXT NOT NULL DEFAULT 'discord'
+        CHECK (platform IN ('discord','telegram'));
+      -- audit.platform is nullable to match the existing nullable audit.discord_user_id.
+      ALTER TABLE verification.audit
+        ADD COLUMN platform TEXT
+        CHECK (platform IS NULL OR platform IN ('discord','telegram'));
+      UPDATE verification.audit
+        SET platform = 'discord'
+        WHERE discord_user_id IS NOT NULL;
+
+      -- 2. discord_user_id -> platform_user_id
+      ALTER TABLE verification.link_tokens RENAME COLUMN discord_user_id TO platform_user_id;
+      ALTER TABLE verification.links       RENAME COLUMN discord_user_id TO platform_user_id;
+      ALTER TABLE verification.role_events RENAME COLUMN discord_user_id TO platform_user_id;
+      ALTER TABLE verification.bio_codes   RENAME COLUMN discord_user_id TO platform_user_id;
+      ALTER TABLE verification.audit       RENAME COLUMN discord_user_id TO platform_user_id;
+
+      -- 3. guild_id -> platform_scope_id (audit has no guild_id, skip).
+      ALTER TABLE verification.link_tokens RENAME COLUMN guild_id TO platform_scope_id;
+      ALTER TABLE verification.links       RENAME COLUMN guild_id TO platform_scope_id;
+      ALTER TABLE verification.role_events RENAME COLUMN guild_id TO platform_scope_id;
+      ALTER TABLE verification.bio_codes   RENAME COLUMN guild_id TO platform_scope_id;
+
+      -- 4. Repoint the links PK to include platform.
+      ALTER TABLE verification.links DROP CONSTRAINT links_pkey;
+      ALTER TABLE verification.links
+        ADD CONSTRAINT links_pkey PRIMARY KEY (platform, platform_user_id, holder_address);
+
+      -- 5. Audit user index now includes platform.
+      DROP INDEX IF EXISTS verification.audit_user_idx;
+      CREATE INDEX audit_user_idx ON verification.audit (platform, platform_user_id);
+
+      -- 6. Drop the DEFAULT so future inserts must specify platform explicitly.
+      ALTER TABLE verification.link_tokens ALTER COLUMN platform DROP DEFAULT;
+      ALTER TABLE verification.links       ALTER COLUMN platform DROP DEFAULT;
+      ALTER TABLE verification.role_events ALTER COLUMN platform DROP DEFAULT;
+      ALTER TABLE verification.bio_codes   ALTER COLUMN platform DROP DEFAULT;
+    `,
+  },
 ];
 
 export const runMigrations = async (pool: Pool): Promise<void> => {

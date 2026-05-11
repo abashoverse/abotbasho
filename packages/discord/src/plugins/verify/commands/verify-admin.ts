@@ -105,7 +105,7 @@ export const verifyAdmin = {
           .slice(0, 20)
           .map(
             (u) =>
-              `• <@${u.discord_user_id}> (${u.methods.join("/")}, ${u.wallets} wallet${u.wallets === 1 ? "" : "s"})`,
+              `• <@${u.platform_user_id}> (${u.methods.join("/")}, ${u.wallets} wallet${u.wallets === 1 ? "" : "s"})`,
           )
           .join("\n");
         const more =
@@ -185,7 +185,7 @@ export const verifyAdmin = {
         );
         return;
       }
-      const verifiedSet = new Set(verified.users.map((u) => u.discord_user_id));
+      const verifiedSet = new Set(verified.users.map((u) => u.platform_user_id));
 
       // Skip the bot itself (defensive; it shouldn't have the holder role
       // but some moderators assign roles oddly).

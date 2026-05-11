@@ -1,5 +1,7 @@
 import { env } from "../../env.js";
 
+const DISCORD_PLATFORM = "discord" as const;
+
 const headers = (): Record<string, string> => ({
   "content-type": "application/json",
   accept: "application/json",
@@ -19,8 +21,9 @@ export const startSiwe = async (params: {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({
-      discord_user_id: params.discordUserId,
-      guild_id: params.guildId,
+      platform: DISCORD_PLATFORM,
+      platform_user_id: params.discordUserId,
+      platform_scope_id: params.guildId,
     }),
   });
   if (!res.ok) throw new Error(`/verify/start ${res.status}`);
@@ -37,8 +40,9 @@ export const unlink = async (params: {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({
-      discord_user_id: params.discordUserId,
-      guild_id: params.guildId,
+      platform: DISCORD_PLATFORM,
+      platform_user_id: params.discordUserId,
+      platform_scope_id: params.guildId,
       holder_address: params.holderAddress,
     }),
   });
@@ -55,7 +59,9 @@ export interface LinkRow {
 
 export const getLinks = async (discordUserId: string): Promise<LinkRow[]> => {
   const res = await fetch(
-    url(`/verify/links/${encodeURIComponent(discordUserId)}`),
+    url(
+      `/verify/links/${DISCORD_PLATFORM}/${encodeURIComponent(discordUserId)}`,
+    ),
     { headers: headers() },
   );
   if (!res.ok) throw new Error(`/verify/links ${res.status}`);
@@ -64,7 +70,8 @@ export const getLinks = async (discordUserId: string): Promise<LinkRow[]> => {
 };
 
 export interface VerifiedUser {
-  discord_user_id: string;
+  platform: "discord";
+  platform_user_id: string;
   wallets: number;
   methods: string[];
   first_verified: string;
@@ -75,15 +82,19 @@ export const getAllLinks = async (): Promise<{
   total: number;
   users: VerifiedUser[];
 }> => {
-  const res = await fetch(url(`/verify/all-links`), { headers: headers() });
+  const res = await fetch(
+    url(`/verify/all-links?platform=${DISCORD_PLATFORM}`),
+    { headers: headers() },
+  );
   if (!res.ok) throw new Error(`/verify/all-links ${res.status}`);
   return (await res.json()) as { total: number; users: VerifiedUser[] };
 };
 
 export interface RoleEvent {
   id: string;
-  discord_user_id: string;
-  guild_id: string;
+  platform: "discord";
+  platform_user_id: string;
+  platform_scope_id: string;
   desired_state: "grant" | "revoke";
   reason: string;
   created_at: string;
@@ -96,6 +107,7 @@ export const getRoleEvents = async (params: {
   const u = new URL(url("/verify/role-events"));
   u.searchParams.set("since", params.since.toString());
   u.searchParams.set("limit", String(params.limit));
+  u.searchParams.set("platform", DISCORD_PLATFORM);
   const res = await fetch(u.toString(), { headers: headers() });
   if (!res.ok) throw new Error(`/verify/role-events ${res.status}`);
   const data = (await res.json()) as { events: RoleEvent[] };
