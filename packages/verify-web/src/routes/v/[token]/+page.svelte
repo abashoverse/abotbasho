@@ -4,7 +4,30 @@
   import { SiweMessage } from "siwe";
   import { connect, disconnect, signMessage, getAccount } from "@wagmi/core";
   import { injected } from "@wagmi/connectors";
-  import { wagmiConfig } from "$lib/wagmi";
+  import {
+    wagmiConfig,
+    injectedConnector,
+    walletConnectConnector,
+    hasWalletConnect,
+  } from "$lib/wagmi";
+
+  // EIP-6963: each modern wallet extension announces itself with this
+  // shape so a page can list them all instead of fighting over
+  // window.ethereum. Tracked per uuid so re-announcements (e.g. after
+  // wallet unlock) don't create duplicates.
+  interface Eip6963ProviderInfo {
+    uuid: string;
+    name: string;
+    icon: string;
+    rdns: string;
+  }
+  interface Eip6963DetectedWallet {
+    info: Eip6963ProviderInfo;
+    provider: unknown;
+  }
+  interface Eip6963AnnounceEvent extends Event {
+    detail?: Eip6963DetectedWallet;
+  }
 
   let { data }: { data: PageData } = $props();
 
@@ -17,6 +40,7 @@
   let address = $state<string | null>(null);
   let delegatedFrom = $state("");
   let siweError = $state<string | null>(null);
+  let detectedWallets = $state<Eip6963DetectedWallet[]>([]);
 
   // Bio state
   let bioRequesting = $state(false);
@@ -37,6 +61,21 @@
   onMount(() => {
     const acc = getAccount(wagmiConfig);
     if (acc.address) address = acc.address;
+
+    const onAnnounce = (e: Event) => {
+      const evt = e as Eip6963AnnounceEvent;
+      if (!evt.detail) return;
+      const next = evt.detail;
+      detectedWallets = [
+        ...detectedWallets.filter((w) => w.info.uuid !== next.info.uuid),
+        next,
+      ];
+    };
+    window.addEventListener("eip6963:announceProvider", onAnnounce);
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+    return () => {
+      window.removeEventListener("eip6963:announceProvider", onAnnounce);
+    };
   });
 
   const switchTab = (next: Tab) => {
@@ -48,11 +87,60 @@
 
   // ---- SIWE ----------------------------------------------------------
 
-  const onConnect = async () => {
+  const onConnectInjected = async () => {
     connecting = true;
     siweError = null;
     try {
-      const result = await connect(wagmiConfig, { connector: injected() });
+      const result = await connect(wagmiConfig, {
+        connector: injectedConnector,
+      });
+      address = result.accounts[0] ?? null;
+    } catch (e) {
+      siweError = e instanceof Error ? e.message : "connect_failed";
+    } finally {
+      connecting = false;
+    }
+  };
+
+  // Picker path: connect to a specific EIP-6963 wallet. Avoids the
+  // collision where whichever extension hijacked window.ethereum wins.
+  const onConnectWallet = async (wallet: Eip6963DetectedWallet) => {
+    connecting = true;
+    siweError = null;
+    try {
+      try {
+        await disconnect(wagmiConfig);
+      } catch {
+        // no prior connection, ignore
+      }
+      const connector = injected({
+        target: () => ({
+          id: wallet.info.rdns,
+          name: wallet.info.name,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          provider: wallet.provider as any,
+        }),
+      });
+      const result = await connect(wagmiConfig, { connector });
+      address = result.accounts[0] ?? null;
+    } catch (e) {
+      siweError = e instanceof Error ? e.message : "connect_failed";
+    } finally {
+      connecting = false;
+    }
+  };
+
+  // WalletConnect path. On mobile (including Telegram's in-app browser),
+  // tapping this opens a wallet picker that deep-links into the user's
+  // wallet app to sign. On desktop, it shows a QR for mobile-wallet scan.
+  const onConnectWalletConnect = async () => {
+    if (!walletConnectConnector) return;
+    connecting = true;
+    siweError = null;
+    try {
+      const result = await connect(wagmiConfig, {
+        connector: walletConnectConnector,
+      });
       address = result.accounts[0] ?? null;
     } catch (e) {
       siweError = e instanceof Error ? e.message : "connect_failed";
@@ -90,7 +178,7 @@
       // user dismissed picker or wallet doesn't support EIP-2255
     }
 
-    await onConnect();
+    await onConnectInjected();
   };
 
   const onVerify = async () => {
@@ -314,13 +402,42 @@
           <p class="hint">
             Sign a message with your wallet. No transaction, no gas.
           </p>
-          <button
-            onclick={onConnect}
-            disabled={connecting}
-            class="btn primary full"
-          >
-            {connecting ? "Connecting…" : "Connect wallet"}
-          </button>
+          {#if detectedWallets.length > 0}
+            <div class="wallets">
+              {#each detectedWallets as wallet (wallet.info.uuid)}
+                <button
+                  type="button"
+                  class="wallet-option"
+                  onclick={() => onConnectWallet(wallet)}
+                  disabled={connecting}
+                >
+                  <img src={wallet.info.icon} alt="" class="wallet-icon" />
+                  <span class="wallet-name">{wallet.info.name}</span>
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <button
+              onclick={onConnectInjected}
+              disabled={connecting}
+              class="btn primary full"
+            >
+              {connecting ? "Connecting…" : "Connect browser wallet"}
+            </button>
+          {/if}
+          {#if hasWalletConnect}
+            <button
+              onclick={onConnectWalletConnect}
+              disabled={connecting}
+              class="btn ghost full"
+            >
+              {connecting ? "Connecting…" : "Connect mobile wallet"}
+            </button>
+            <p class="hint">
+              On mobile or if your wallet isn't listed, sign with your
+              wallet app (Rainbow, MetaMask Mobile, Trust, etc.).
+            </p>
+          {/if}
         {:else}
           <div class="wallet">
             <div>
@@ -542,6 +659,51 @@
   .card.ok p {
     margin: 0;
     line-height: 1.5;
+  }
+
+  .wallets {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .wallet-option {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.6rem 0.9rem;
+    background: var(--bg-sunken);
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+  }
+
+  .wallet-option:hover:not(:disabled) {
+    background: var(--bg-elevated);
+    border-color: var(--accent);
+  }
+
+  .wallet-option:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .wallet-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+
+  .wallet-name {
+    flex: 1;
   }
 
   .wallet {

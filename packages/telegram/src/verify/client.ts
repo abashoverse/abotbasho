@@ -78,3 +78,27 @@ export const markRoleEventApplied = async (id: string): Promise<void> => {
   );
   if (!res.ok) throw new Error(`/verify/role-events/${id} PATCH ${res.status}`);
 };
+
+export interface VerifyLink {
+  holder_address: string;
+  signer_address: string | null;
+  method: string;
+  verified_at: string;
+  last_checked_at: string;
+}
+
+export const getLinks = async (params: {
+  telegramUserId: string;
+}): Promise<VerifyLink[]> => {
+  const res = await fetch(
+    url(
+      `/verify/links/${TELEGRAM_PLATFORM}/${encodeURIComponent(
+        params.telegramUserId,
+      )}`,
+    ),
+    { headers: headers() },
+  );
+  if (!res.ok) throw new Error(`/verify/links ${res.status}`);
+  const data = (await res.json()) as { links: VerifyLink[] };
+  return data.links;
+};

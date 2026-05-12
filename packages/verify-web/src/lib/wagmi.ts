@@ -7,9 +7,15 @@ const projectId = env.PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
 const chainId = Number(env.PUBLIC_INDEXER_CHAIN_ID ?? "1");
 const chain = getChainProfile(chainId).viemChain;
 
-const connectors = projectId
-  ? [injected(), walletConnect({ projectId, showQrModal: true })]
-  : [injected()];
+export const injectedConnector = injected();
+export const walletConnectConnector = projectId
+  ? walletConnect({ projectId, showQrModal: true })
+  : null;
+export const hasWalletConnect = walletConnectConnector !== null;
+
+const connectors = walletConnectConnector
+  ? [injectedConnector, walletConnectConnector]
+  : [injectedConnector];
 
 export const wagmiConfig = createConfig({
   chains: [chain],

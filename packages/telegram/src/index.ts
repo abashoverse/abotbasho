@@ -5,7 +5,8 @@ import {
   getProjectConfig,
 } from "@abotbasho/shared";
 import { env } from "./env.js";
-import { startSiwe, unlink } from "./verify/client.js";
+import { applyAccessEvent } from "./verify/access.js";
+import { getLinks, startSiwe, unlink } from "./verify/client.js";
 import { drainRoleEvents } from "./verify/poller.js";
 
 const cfg = getProjectConfig();
@@ -83,9 +84,11 @@ if (verifyEnabled && telegramCfg) {
           url,
         );
         await ctx.reply(
-          [header, ``, `Tap the button below (valid for 10 minutes).`].join(
-            "\n",
-          ),
+          [
+            header,
+            ``,
+            `Tap the button below (valid for 10 minutes). On mobile, pick "Connect mobile wallet" inside.`,
+          ].join("\n"),
           {
             reply_markup: keyboard,
             link_preview_options: { is_disabled: true },
@@ -126,6 +129,46 @@ if (verifyEnabled && telegramCfg) {
       await ctx.reply("Unverify is currently unavailable.");
     }
   });
+
+  // /join: re-issue an invite link for users who've already proved control
+  // via /verify. Skips SIWE since the indexer prunes links the moment a
+  // holder's balance hits zero, so the presence of any link is sufficient
+  // proof they still hold. Saves the round trip for users who got booted
+  // (manual admin kick, third-party gate, network blip) and just need back in.
+  bot.command("join", async (ctx) => {
+    if (!inDm(ctx)) return;
+    if (!ctx.from) return;
+    const telegramUserId = String(ctx.from.id);
+    try {
+      const links = await getLinks({ telegramUserId });
+      if (links.length === 0) {
+        await ctx.reply(
+          `No wallet linked to your account. Run /verify first to prove ${collectionName} ownership.`,
+        );
+        return;
+      }
+      const result = await applyAccessEvent(bot, {
+        chatId: telegramCfg.chatId,
+        userId: telegramUserId,
+        desiredState: "grant",
+        inviteLinkExpirySec: telegramCfg.inviteLinkExpirySec ?? 600,
+        kickSemantics: telegramCfg.kickSemantics !== false,
+        notifyChatOnUnkickable: telegramCfg.notifyChatOnUnkickable === true,
+      });
+      if (!result.ok) {
+        console.error(
+          `[telegram /join] applyAccessEvent failed: ${result.reason}`,
+        );
+        await ctx.reply(
+          "Couldn't issue an invite right now. Try again in a minute.",
+        );
+      }
+      // On ok, applyAccessEvent has already DMed the invite link.
+    } catch (err) {
+      console.error("[telegram /join] failed:", err);
+      await ctx.reply("Couldn't reach the verifier. Try again later.");
+    }
+  });
 }
 
 bot.catch((err) => {
@@ -139,6 +182,10 @@ if (verifyEnabled) {
       {
         command: "verify",
         description: "Verify NFT holdings and get a chat invite",
+      },
+      {
+        command: "join",
+        description: "Get a fresh invite link (after /verify)",
       },
       {
         command: "unverify",

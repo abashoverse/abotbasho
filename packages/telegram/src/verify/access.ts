@@ -46,6 +46,21 @@ export const applyAccessEvent = async (
   },
 ): Promise<AccessApplyResult> => {
   if (params.desiredState === "grant") {
+    // Clear any prior ban before issuing the invite. Telegram surfaces a
+    // misleading "invalid or has expired" error when a banned user clicks
+    // an invite link, no matter the ban's origin. only_if_banned makes
+    // this idempotent for "left" or "member" status.
+    try {
+      await bot.api.unbanChatMember(params.chatId, Number(params.userId), {
+        only_if_banned: true,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[telegram] preemptive unban for ${params.userId} failed: ${msg}`,
+      );
+    }
+
     let inviteLink: string;
     try {
       const expireDate =
