@@ -1,6 +1,7 @@
 import { Bot, type Context, InlineKeyboard } from "grammy";
 import {
   DEFAULT_VERIFY_POLL_INTERVAL_MS,
+  displayNameOf,
   getProjectConfig,
 } from "@abotbasho/shared";
 import { env } from "./env.js";
@@ -8,6 +9,7 @@ import { startSiwe, unlink } from "./verify/client.js";
 import { drainRoleEvents } from "./verify/poller.js";
 
 const cfg = getProjectConfig();
+const collectionName = displayNameOf(cfg.primary);
 const verifyCfg = cfg.verify;
 const telegramCfg = verifyCfg?.telegram;
 const verifyEnabled = verifyCfg?.enabled === true && telegramCfg !== undefined;
@@ -56,11 +58,11 @@ bot.command("start", async (ctx) => {
   if (!inDm(ctx)) return;
   if (verifyEnabled) {
     await ctx.reply(
-      `Welcome. Run /verify to prove on-chain ownership of ${cfg.project.name} and get a single-use invite to the holders group.`,
+      `Welcome. Run /verify to prove on-chain ownership of ${collectionName} and get a single-use invite to the holders group.`,
     );
   } else {
     await ctx.reply(
-      `Hi. ${cfg.project.name} verification isn't configured on this bot.`,
+      `Hi. ${collectionName} verification isn't configured on this bot.`,
     );
   }
 });
@@ -74,15 +76,14 @@ if (verifyEnabled && telegramCfg) {
         telegramUserId: String(ctx.from.id),
         chatId: telegramCfg.chatId,
       });
-      const header = `Sign in to verify your ${cfg.project.name} holdings.`;
-      const footer = `delegate.cash hot/cold delegation is supported on the page.`;
+      const header = `Sign in to verify your ${collectionName} holdings.`;
       if (isTelegramButtonCompatibleUrl(url)) {
         const keyboard = new InlineKeyboard().url(
           "Open verification page",
           url,
         );
         await ctx.reply(
-          [header, ``, `Tap the button below (valid for 10 minutes).`, ``, footer].join(
+          [header, ``, `Tap the button below (valid for 10 minutes).`].join(
             "\n",
           ),
           {
@@ -97,14 +98,9 @@ if (verifyEnabled && telegramCfg) {
           `[telegram /verify] non-public URL (${url}); sending plain text. For clickable buttons in local testing, expose verify-web via a tunnel (ngrok / cloudflare tunnel) and set verify.publicUrl accordingly.`,
         );
         await ctx.reply(
-          [
-            header,
-            ``,
-            `Open this link (valid for 10 minutes):`,
-            url,
-            ``,
-            footer,
-          ].join("\n"),
+          [header, ``, `Open this link (valid for 10 minutes):`, url].join(
+            "\n",
+          ),
           { link_preview_options: { is_disabled: true } },
         );
       }
