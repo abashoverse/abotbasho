@@ -39,7 +39,10 @@ export const startPoller = (opts: PollerOptions): { stop: () => void } => {
         initialized = true;
       }
       const url = `${opts.indexerUrl}/api/events?since=${cursor.toString()}&limit=100`;
-      const res = await fetch(url);
+      // Explicit timeout so a dead keep-alive socket (e.g. after the indexer is
+      // recreated on its own and gets a new compose-network IP) fails the tick
+      // fast and lets the next one re-resolve, instead of stalling the loop.
+      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
       if (!res.ok) throw new Error(`indexer ${res.status}`);
       const json = (await res.json()) as EventsResponse;
       const events = parseEvents(json);

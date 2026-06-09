@@ -44,9 +44,27 @@ app.get("/api/events", async (c) => {
       .limit(limit),
   ]);
 
+  // Sales and wraps paginate independently here, but the poller merges both
+  // lists, sorts by cursor, and advances a single shared cursor as it posts.
+  // If one stream is truncated at `limit` while the other holds a higher
+  // cursor, returning the pages as-is lets the poller's cursor jump past the
+  // un-returned tail of the truncated stream, skipping those events forever.
+  // Cap the page at the largest cursor we can prove is complete: the smallest
+  // "last cursor" among the truncated streams. Dropped rows come back on the
+  // next poll (their cursor is still > the new `since`), so nothing is lost.
+  let bound: bigint | null = null;
+  for (const rows of [sales, wraps]) {
+    const last = rows.at(-1);
+    if (rows.length === limit && last) {
+      bound = bound === null || last.cursor < bound ? last.cursor : bound;
+    }
+  }
+  const withinBound = <T extends { cursor: bigint }>(rows: T[]): T[] =>
+    bound === null ? rows : rows.filter((r) => r.cursor <= bound);
+
   return c.json({
-    sales: stringifyBigints(sales),
-    wraps: stringifyBigints(wraps),
+    sales: stringifyBigints(withinBound(sales)),
+    wraps: stringifyBigints(withinBound(wraps)),
   });
 });
 

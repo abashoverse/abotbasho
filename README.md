@@ -360,6 +360,31 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA verification GRANT SELECT, INSERT, UPDATE, DE
 
 Migrations still need a role that can `CREATE` in the schema; run them once with the superuser, then switch the indexer to `VERIFICATION_DB_URL=postgresql://verify_app:...`.
 
+### Redeploying
+
+Always redeploy the **whole stack at once** so the indexer keeps a stable address on the compose network:
+
+```sh
+./deploy.sh                  # base stack
+./deploy.sh verify telegram  # with whatever optional profiles you run
+```
+
+`deploy.sh` is a thin wrapper around `docker compose up -d --build` for every service. Bringing services up one at a time is the trap: if you recreate the `indexer` on its own (`docker compose up -d indexer`, or an image/config change that only touches it), it gets a **new IP** on the compose network, but the long-running `discord`/`twitter`/`telegram`/`verify-web` containers keep resolving the old one. They then spam, against a dead address:
+
+```
+[plugin:verify] role-events fetch failed: ... ConnectionRefused / FailedToOpenSocket
+[plugin:verify] role-events fetch failed: AbortError: The operation timed out
+[plugin:events] poll error: ... ConnectionClosed
+```
+
+…even though `docker compose ps` shows the indexer `Up (healthy)`. The tell is uneven uptimes (indexer `Up 2 minutes`, bots `Up 6 days`); the indexer's healthcheck only means it answers on its own localhost, not that dependents can reach it. It self-heals once the stale sockets are evicted, but to clear it immediately, restart the dependents so they re-resolve DNS:
+
+```sh
+docker compose restart discord twitter telegram verify-web
+```
+
+If a restart doesn't clear it, reconcile the network with `docker compose down && docker compose up -d` (data lives in named volumes; never pass `-v`).
+
 ### Upgrading: Ponder schema reset
 
 After pulling indexer code changes that touch `ponder.config.ts`, `ponder.schema.ts`, or the Transfer handler in `src/index.ts`, Ponder will refuse to reuse the existing schema with `Schema 'abotbasho' was previously used by a different Ponder app`. To recover:
