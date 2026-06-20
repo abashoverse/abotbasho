@@ -30,6 +30,11 @@ export default createConfig({
     [chain.ponderName]: {
       id: chain.id,
       rpc: getChainRpcUrl(),
+      // Cap requests/sec to stay under the RPC tier's rate limit. Ponder
+      // defaults to 50, which overruns free tiers: Alchemy free 429s the
+      // backfill burst, Ponder retries those silently, and the historical sync
+      // stalls with no log output. Lower PONDER_MAX_RPS until the 429s stop.
+      maxRequestsPerSecond: Number(process.env.PONDER_MAX_RPS) || 50,
     },
   },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
