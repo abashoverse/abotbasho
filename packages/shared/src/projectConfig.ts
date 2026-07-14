@@ -28,6 +28,7 @@ export interface ProjectMessages {
   sale?: string;
   wrap?: string;
   unwrap?: string;
+  mint?: string;
 }
 
 export interface VerifyDiscordConfig {

@@ -1,5 +1,5 @@
 import { ponder } from "ponder:registry";
-import { saleEvents, wrapEvents, wrapperHoldings } from "ponder:schema";
+import { mintEvents, saleEvents, wrapEvents, wrapperHoldings } from "ponder:schema";
 import {
   ZERO_ADDRESS,
   cursorOf,
@@ -113,6 +113,36 @@ const handleTransfer = async (
     });
   }
 
+  // Mints: Transfer from ZERO_ADDRESS on the primary contract. Wrapper mints
+  // are excluded because they're already covered by the Wrapped handler and
+  // posting both would duplicate the feed.
+  if (
+    from === ZERO_ADDRESS &&
+    to !== ZERO_ADDRESS &&
+    contractAddress === cfg.primary.address
+  ) {
+    const blockNumber = event.block.number as bigint;
+    const logIndex = Number(event.log.logIndex);
+    const id = `${blockNumber}-${logIndex}`;
+    // Idempotent insert. On crash recovery or a reorg, Ponder replays handlers
+    // over blocks whose rows may already be committed (an unfinalized row that
+    // its revert didn't remove). The PK is (block, logIndex), unique per log, so
+    // a conflict always means "this exact event was already indexed". Skip it
+    // instead of throwing, which Ponder treats as fatal and crash-loops on.
+    await context.db.insert(mintEvents).values({
+      id,
+      contract: contractLabel,
+      contractAddress,
+      tokenId,
+      minter: to,
+      txHash: event.transaction.hash,
+      blockNumber,
+      logIndex,
+      timestamp: event.block.timestamp as bigint,
+      cursor: cursorOf(blockNumber, logIndex),
+    }).onConflictDoNothing();
+  }
+
   if (from === ZERO_ADDRESS || to === ZERO_ADDRESS) return;
 
   // Skip transfers where the wrapper is one of the parties: those are wraps/unwraps,
@@ -134,11 +164,8 @@ const handleTransfer = async (
   const logIndex = Number(event.log.logIndex);
   const id = `${blockNumber}-${logIndex}`;
 
-  // Idempotent insert. On crash recovery or a reorg, Ponder replays handlers
-  // over blocks whose rows may already be committed (an unfinalized row that its
-  // revert didn't remove). The PK is (block, logIndex), unique per log, so a
-  // conflict always means "this exact event was already indexed". Skip it
-  // instead of throwing, which Ponder treats as fatal and crash-loops on.
+  // Idempotent for the same reason as the mint insert above: a replayed or
+  // reorged block must not crash-loop the indexer on a duplicate PK.
   await context.db.insert(saleEvents).values({
     id,
     contract: contractLabel,
@@ -166,7 +193,7 @@ const handleWrap = async (args: EventArgs, kind: "wrap" | "unwrap") => {
   const id = `${blockNumber}-${logIndex}`;
 
   // Idempotent insert: a replayed or reorged block must not crash-loop the
-  // indexer on a duplicate PK. See handleTransfer's sale insert for the full
+  // indexer on a duplicate PK. See handleTransfer's mint insert for the full
   // rationale.
   await context.db.insert(wrapEvents).values({
     id,

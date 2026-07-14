@@ -79,6 +79,19 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
+// Bun + @discordjs/ws@1.2.3: on a transient gateway network blip, ws emits an
+// 'error' whose payload isn't a plain object under Bun, so the library's
+// onError (`"code" in error`) throws on a non-object and the process exits 1.
+// discord.js reconnects on its own, so log and stay alive instead of dying.
+client.on("error", (err) => console.error("[discord] client error:", err));
+client.on("shardError", (err) => console.error("[discord] shard error:", err));
+process.on("uncaughtException", (err) => {
+  console.error("[discord] uncaughtException (continuing):", err);
+});
+process.on("unhandledRejection", (err) => {
+  console.error("[discord] unhandledRejection (continuing):", err);
+});
+
 await client.login(env.DISCORD_TOKEN);
 
 const shutdown = async () => {

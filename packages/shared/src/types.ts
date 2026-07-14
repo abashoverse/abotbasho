@@ -33,9 +33,23 @@ export interface WrapEvent {
   cursor: bigint;
 }
 
+export interface MintEvent {
+  id: string;
+  contract: string;
+  contractAddress: Address;
+  tokenId: bigint;
+  minter: Address;
+  txHash: Hex;
+  blockNumber: bigint;
+  logIndex: number;
+  timestamp: bigint;
+  cursor: bigint;
+}
+
 export type AnyEvent =
   | ({ type: "sale" } & SaleEvent)
-  | ({ type: "wrap" } & WrapEvent);
+  | ({ type: "wrap" } & WrapEvent)
+  | ({ type: "mint" } & MintEvent);
 
 export const cursorOf = (blockNumber: bigint, logIndex: number): bigint =>
   blockNumber * 1_000_000n + BigInt(logIndex);

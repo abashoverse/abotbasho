@@ -3,6 +3,7 @@ import type {
   Marketplace,
   SaleEvent,
   WrapEvent,
+  MintEvent,
   AnyEvent,
 } from "./types.js";
 import type { Address, Hex } from "viem";
@@ -36,9 +37,23 @@ interface WrapEventWire {
   cursor: string;
 }
 
+interface MintEventWire {
+  id: string;
+  contract: string;
+  contractAddress: Address;
+  tokenId: string;
+  minter: Address;
+  txHash: Hex;
+  blockNumber: string;
+  logIndex: number;
+  timestamp: string;
+  cursor: string;
+}
+
 export interface EventsResponse {
   sales: SaleEventWire[];
   wraps: WrapEventWire[];
+  mints: MintEventWire[];
 }
 
 export const parseSaleEvent = (w: SaleEventWire): SaleEvent => ({
@@ -70,10 +85,27 @@ export const parseWrapEvent = (w: WrapEventWire): WrapEvent => ({
   cursor: BigInt(w.cursor),
 });
 
+export const parseMintEvent = (w: MintEventWire): MintEvent => ({
+  id: w.id,
+  contract: w.contract,
+  contractAddress: w.contractAddress,
+  tokenId: BigInt(w.tokenId),
+  minter: w.minter,
+  txHash: w.txHash,
+  blockNumber: BigInt(w.blockNumber),
+  logIndex: w.logIndex,
+  timestamp: BigInt(w.timestamp),
+  cursor: BigInt(w.cursor),
+});
+
 export const parseEvents = (resp: EventsResponse): AnyEvent[] => {
   const merged: AnyEvent[] = [
     ...resp.sales.map((s) => ({ type: "sale" as const, ...parseSaleEvent(s) })),
     ...resp.wraps.map((w) => ({ type: "wrap" as const, ...parseWrapEvent(w) })),
+    ...(resp.mints ?? []).map((m) => ({
+      type: "mint" as const,
+      ...parseMintEvent(m),
+    })),
   ];
   merged.sort((a, b) => (a.cursor < b.cursor ? -1 : a.cursor > b.cursor ? 1 : 0));
   return merged;

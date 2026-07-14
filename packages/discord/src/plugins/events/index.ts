@@ -5,6 +5,7 @@ import {
   registerMessageKind,
 } from "../extensions.js";
 import { saleHandler, sampleSale } from "./handlers/sale.js";
+import { mintHandler, sampleMint } from "./handlers/mint.js";
 import { startEventPoller, stopEventPoller } from "./poller.js";
 import { recent } from "./commands/recent.js";
 import { debug } from "./commands/debug.js";
@@ -16,6 +17,14 @@ registerChannelSlot({
 });
 registerMessageKind({ id: "sale", sample: sampleSale });
 registerEventHandler(saleHandler);
+
+registerChannelSlot({
+  id: "mints",
+  envVar: "DISCORD_MINTS_CHANNEL_ID",
+  description: "Channel for mint events",
+});
+registerMessageKind({ id: "mint", sample: sampleMint });
+registerEventHandler(mintHandler);
 
 export const eventsPlugin: DiscordPlugin = {
   name: "events",

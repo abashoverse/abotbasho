@@ -1,5 +1,5 @@
 import { createConfig } from "ponder";
-import { getChain, getChainRpcUrl, loadConfig, loadRootEnv } from "@abotbasho/shared";
+import { getChain, getChainRpcUrls, loadConfig, loadRootEnv } from "@abotbasho/shared";
 import { Erc721Abi, WrapperAbi } from "@abotbasho/shared/abis";
 
 loadRootEnv();
@@ -29,7 +29,7 @@ export default createConfig({
   chains: {
     [chain.ponderName]: {
       id: chain.id,
-      rpc: getChainRpcUrl(),
+      rpc: getChainRpcUrls(),
       // Cap requests/sec to stay under the RPC tier's rate limit. Ponder
       // defaults to 50, which overruns free tiers: Alchemy free 429s the
       // backfill burst, Ponder retries those silently, and the historical sync
