@@ -13,3 +13,6 @@ packages/twitter/data/
 
 # Per-deployment config (copy abotbasho.config.example.ts and edit)
 abotbasho.config.ts
+
+# Claude Code per-developer settings
+.claude/

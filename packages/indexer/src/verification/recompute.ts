@@ -134,10 +134,11 @@ export const maybeRecomputeForVerification = async (
 
     const holderBytes = Buffer.from(addr.slice(2), "hex");
     const { rows: linkRows } = await ctx.pool.query<{
-      discord_user_id: string;
-      guild_id: string;
+      platform: string;
+      platform_user_id: string;
+      platform_scope_id: string;
     }>(
-      `SELECT discord_user_id, guild_id FROM verification.links
+      `SELECT platform, platform_user_id, platform_scope_id FROM verification.links
        WHERE holder_address = $1`,
       [holderBytes],
     );
@@ -156,17 +157,19 @@ export const maybeRecomputeForVerification = async (
     for (const row of linkRows) {
       const { rows: remaining } = await ctx.pool.query<{ exists: boolean }>(
         `SELECT EXISTS(
-           SELECT 1 FROM verification.links WHERE discord_user_id = $1
+           SELECT 1 FROM verification.links
+           WHERE platform = $1 AND platform_user_id = $2
          ) AS "exists"`,
-        [row.discord_user_id],
+        [row.platform, row.platform_user_id],
       );
       const hasRemaining = remaining[0]?.exists === true;
       await ctx.pool.query(
         `INSERT INTO verification.audit
-           (discord_user_id, holder_address, action, detail)
-         VALUES ($1, $2, 'link_revoked', $3)`,
+           (platform, platform_user_id, holder_address, action, detail)
+         VALUES ($1, $2, $3, 'link_revoked', $4)`,
         [
-          row.discord_user_id,
+          row.platform,
+          row.platform_user_id,
           holderBytes,
           hasRemaining
             ? "balance=0; user has other active links"
@@ -176,9 +179,9 @@ export const maybeRecomputeForVerification = async (
       if (!hasRemaining) {
         await ctx.pool.query(
           `INSERT INTO verification.role_events
-             (discord_user_id, guild_id, desired_state, reason)
-           VALUES ($1, $2, 'revoke', 'last_link_zero')`,
-          [row.discord_user_id, row.guild_id],
+             (platform, platform_user_id, platform_scope_id, desired_state, reason)
+           VALUES ($1, $2, $3, 'revoke', 'last_link_zero')`,
+          [row.platform, row.platform_user_id, row.platform_scope_id],
         );
       }
     }

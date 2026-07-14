@@ -67,6 +67,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Optional: Telegram bot. Only needed when abotbasho.config.ts has
+  # verify.telegram configured. Same image as the indexer/discord services.
+  telegram:
+    build: .
+    image: abotbasho:latest
+    command: bun --filter '@abotbasho/telegram' start
+    env_file: .env
+    environment:
+      - INDEXER_SQL_URL=http://indexer:42069/sql
+      - TELEGRAM_DATA_DIR=/data
+    volumes:
+      - telegram-data:/data
+    depends_on:
+      indexer:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["telegram"]
+
   # Optional: holder-verification web frontend.
   # Only needed when abotbasho.config.ts has `verify.enabled: true`.
   # Put a TLS-terminating reverse proxy (Caddy / Traefik / nginx) in front of
@@ -98,3 +116,4 @@ volumes:
   indexer-data:
   discord-data:
   twitter-data:
+  telegram-data:

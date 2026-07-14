@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Pool } from "pg";
+import type { Platform } from "./siwe.js";
 
 const BIO_CODE_PREFIX = "abot-";
 const BIO_CODE_TTL_SEC = 24 * 60 * 60;
@@ -9,7 +10,11 @@ const hashCode = (code: string): Buffer =>
 
 export const issueBioCode = async (
   pool: Pool,
-  params: { discordUserId: string; guildId: string },
+  params: {
+    platform: Platform;
+    platformUserId: string;
+    platformScopeId: string;
+  },
 ): Promise<{ code: string; expiresAt: Date }> => {
   // 8 random bytes = 64 bits. With our public rate limits, brute-forcing
   // a code is computationally infeasible regardless, but the longer string
@@ -17,9 +22,16 @@ export const issueBioCode = async (
   const code = `${BIO_CODE_PREFIX}${randomBytes(8).toString("hex")}`;
   const expiresAt = new Date(Date.now() + BIO_CODE_TTL_SEC * 1000);
   await pool.query(
-    `INSERT INTO verification.bio_codes (code_hash, discord_user_id, guild_id, expires_at)
-     VALUES ($1, $2, $3, $4)`,
-    [hashCode(code), params.discordUserId, params.guildId, expiresAt],
+    `INSERT INTO verification.bio_codes
+       (code_hash, platform, platform_user_id, platform_scope_id, expires_at)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [
+      hashCode(code),
+      params.platform,
+      params.platformUserId,
+      params.platformScopeId,
+      expiresAt,
+    ],
   );
   return { code, expiresAt };
 };
@@ -31,15 +43,16 @@ export const issueBioCode = async (
  */
 export const findBioCodeForUser = async (
   pool: Pool,
-  discordUserId: string,
+  platform: Platform,
+  platformUserId: string,
 ): Promise<{ codeHash: Buffer; expiresAt: Date } | null> => {
   const { rows } = await pool.query<{ code_hash: Buffer; expires_at: Date }>(
     `SELECT code_hash, expires_at
      FROM verification.bio_codes
-     WHERE discord_user_id = $1 AND expires_at > now()
+     WHERE platform = $1 AND platform_user_id = $2 AND expires_at > now()
      ORDER BY created_at DESC
      LIMIT 1`,
-    [discordUserId],
+    [platform, platformUserId],
   );
   const row = rows[0];
   if (!row) return null;

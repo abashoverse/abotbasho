@@ -7,9 +7,12 @@ COPY packages/shared/package.json ./packages/shared/
 COPY packages/indexer/package.json ./packages/indexer/
 COPY packages/discord/package.json ./packages/discord/
 COPY packages/twitter/package.json ./packages/twitter/
+COPY packages/telegram/package.json ./packages/telegram/
 
-# Lockfile is optional on first build
-COPY bun.lockb* ./
+# Lockfile is optional on first build. Match both formats: `bun.lock` (text,
+# current default) and `bun.lockb` (older binary). Wildcard means missing
+# lockfile is non-fatal.
+COPY bun.lock* ./
 
 RUN bun install
 

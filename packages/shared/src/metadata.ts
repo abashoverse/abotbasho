@@ -51,6 +51,33 @@ const parseDataJson = (uri: string): unknown => {
   return JSON.parse(decoded);
 };
 
+interface TokenMetadata {
+  image?: string;
+  image_url?: string;
+}
+
+const METADATA_TIMEOUT_MS = 10000;
+const METADATA_ATTEMPTS = 2;
+
+// Off-chain metadata usually lives behind an IPFS gateway that times out or
+// 5xxs intermittently. Retry a couple of times so a transient blip doesn't
+// strip the image off an otherwise-fine sale post.
+const fetchMetadataJson = async (uri: string): Promise<TokenMetadata> => {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= METADATA_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(uri, {
+        signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
+      });
+      if (!res.ok) throw new Error(`metadata HTTP ${res.status}`);
+      return (await res.json()) as TokenMetadata;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+};
+
 export const fetchTokenImage = async (
   rpcUrl: string,
   contract: Address,
@@ -67,23 +94,19 @@ export const fetchTokenImage = async (
       args: [tokenId],
     });
 
-    let metadata: { image?: string; image_url?: string };
-    if (rawUri.startsWith("data:application/json")) {
-      metadata = parseDataJson(rawUri) as typeof metadata;
-    } else {
-      const res = await fetch(resolveUri(rawUri), {
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!res.ok) throw new Error(`metadata HTTP ${res.status}`);
-      metadata = (await res.json()) as typeof metadata;
-    }
+    const metadata: TokenMetadata = rawUri.startsWith("data:application/json")
+      ? (parseDataJson(rawUri) as TokenMetadata)
+      : await fetchMetadataJson(resolveUri(rawUri));
 
     const image = metadata.image ?? metadata.image_url ?? null;
     const resolved = image ? resolveUri(image) : null;
+    // Cache only successful resolutions — including a genuine "metadata has no
+    // image field" null, which won't change. Errors are handled below.
     cache.set(key, resolved);
     return resolved;
   } catch {
-    cache.set(key, null);
+    // Transient RPC/IPFS failure: return null but DON'T cache it, otherwise one
+    // blip poisons the cache and this token stays imageless until restart.
     return null;
   }
 };

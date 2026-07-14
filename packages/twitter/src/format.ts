@@ -73,6 +73,12 @@ export const composeTweet = async (
     return fitCustom(base, messages.sale).join("\n");
   }
 
+  if (event.type === "mint") {
+    throw new Error(
+      "composeTweet: mint events are not posted to Twitter; filter them out in onEvent",
+    );
+  }
+
   if (!cfg.wrapper) {
     throw new Error("received wrap event but no wrapper contract is configured");
   }

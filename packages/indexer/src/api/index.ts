@@ -29,7 +29,7 @@ app.get("/api/events", async (c) => {
   }
   const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "50", 10) || 50, 1), 200);
 
-  const [sales, wraps] = await Promise.all([
+  const [sales, wraps, mints] = await Promise.all([
     db
       .select()
       .from(schema.saleEvents)
@@ -42,11 +42,36 @@ app.get("/api/events", async (c) => {
       .where(gt(schema.wrapEvents.cursor, since))
       .orderBy(asc(schema.wrapEvents.cursor))
       .limit(limit),
+    db
+      .select()
+      .from(schema.mintEvents)
+      .where(gt(schema.mintEvents.cursor, since))
+      .orderBy(asc(schema.mintEvents.cursor))
+      .limit(limit),
   ]);
 
+  // Sales, wraps and mints paginate independently here, but the poller merges
+  // all three, sorts by cursor, and advances a single shared cursor as it
+  // posts. If one stream is truncated at `limit` while another holds a higher
+  // cursor, returning the pages as-is lets the poller's cursor jump past the
+  // un-returned tail of the truncated stream, skipping those events forever.
+  // Cap the page at the largest cursor we can prove is complete: the smallest
+  // "last cursor" among the truncated streams. Dropped rows come back on the
+  // next poll (their cursor is still > the new `since`), so nothing is lost.
+  let bound: bigint | null = null;
+  for (const rows of [sales, wraps, mints]) {
+    const last = rows.at(-1);
+    if (rows.length === limit && last) {
+      bound = bound === null || last.cursor < bound ? last.cursor : bound;
+    }
+  }
+  const withinBound = <T extends { cursor: bigint }>(rows: T[]): T[] =>
+    bound === null ? rows : rows.filter((r) => r.cursor <= bound);
+
   return c.json({
-    sales: stringifyBigints(sales),
-    wraps: stringifyBigints(wraps),
+    sales: stringifyBigints(withinBound(sales)),
+    wraps: stringifyBigints(withinBound(wraps)),
+    mints: stringifyBigints(withinBound(mints)),
   });
 });
 
@@ -77,8 +102,9 @@ app.get("/api/recent", async (c) => {
   const wantSales = type === "all" || type === "sales";
   const wantWraps = type === "all" || type === "wraps";
   const wantUnwraps = type === "all" || type === "unwraps";
+  const wantMints = type === "all" || type === "mints";
 
-  const [sales, wraps] = await Promise.all([
+  const [sales, wraps, mints] = await Promise.all([
     wantSales
       ? db
           .select()
@@ -107,11 +133,19 @@ app.get("/api/recent", async (c) => {
               .orderBy(desc(schema.wrapEvents.cursor))
               .limit(limit)
           : Promise.resolve([]),
+    wantMints
+      ? db
+          .select()
+          .from(schema.mintEvents)
+          .orderBy(desc(schema.mintEvents.cursor))
+          .limit(limit)
+      : Promise.resolve([]),
   ]);
 
   return c.json({
     sales: stringifyBigints(sales),
     wraps: stringifyBigints(wraps),
+    mints: stringifyBigints(mints),
   });
 });
 

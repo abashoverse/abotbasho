@@ -56,11 +56,25 @@ export const getChainIdFromEnv = (): number => {
 export const getChain = (): ChainProfile =>
   getChainProfile(getChainIdFromEnv());
 
-export const getChainRpcUrl = (): string => {
+// Parse the comma-separated PONDER_RPC_URL_<id> into a non-empty list. Ponder
+// round-robins indexing requests across multiple URLs (@ponder/utils
+// loadBalance), so every entry must serve eth_getLogs and the order implies no
+// priority. Whitespace is trimmed and empty entries dropped, so "a, , b," yields
+// ["a", "b"]. The [string, ...string[]] return type lets callers index [0]
+// without a recheck.
+export const getChainRpcUrls = (): [string, ...string[]] => {
   const id = getChainIdFromEnv();
-  const url = process.env[`PONDER_RPC_URL_${id}`];
-  if (!url) {
+  const [first, ...rest] = (process.env[`PONDER_RPC_URL_${id}`] ?? "")
+    .split(",")
+    .map((u) => u.trim())
+    .filter((u) => u.length > 0);
+  if (first === undefined) {
     throw new Error(`PONDER_RPC_URL_${id} is required for chain id ${id}.`);
   }
-  return url;
+  return [first, ...rest];
 };
+
+// First RPC URL. Single-transport consumers (the verification client,
+// discord/twitter ENS + media lookups) use just this one; only the indexer's
+// sync round-robins across the whole list.
+export const getChainRpcUrl = (): string => getChainRpcUrls()[0];

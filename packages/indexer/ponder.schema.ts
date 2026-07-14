@@ -56,3 +56,23 @@ export const wrapEvents = onchainTable(
     timestampIdx: index().on(t.timestamp),
   }),
 );
+
+export const mintEvents = onchainTable(
+  "mint_events",
+  (t) => ({
+    id: t.text().primaryKey(),
+    contract: t.text().notNull(),
+    contractAddress: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    minter: t.hex().notNull(),
+    txHash: t.hex().notNull(),
+    blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    timestamp: t.bigint().notNull(),
+    cursor: t.bigint().notNull(),
+  }),
+  (t) => ({
+    cursorIdx: index().on(t.cursor),
+    timestampIdx: index().on(t.timestamp),
+  }),
+);

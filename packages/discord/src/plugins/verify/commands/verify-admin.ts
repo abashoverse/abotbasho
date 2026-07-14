@@ -105,7 +105,7 @@ export const verifyAdmin = {
           .slice(0, 20)
           .map(
             (u) =>
-              `• <@${u.discord_user_id}> (${u.methods.join("/")}, ${u.wallets} wallet${u.wallets === 1 ? "" : "s"})`,
+              `• <@${u.platform_user_id}> (${u.methods.join("/")}, ${u.wallets} wallet${u.wallets === 1 ? "" : "s"})`,
           )
           .join("\n");
         const more =
@@ -128,9 +128,9 @@ export const verifyAdmin = {
 
     if (sub === "sweep") {
       const cfg = getProjectConfig();
-      const roleId = cfg.verify?.roleId;
+      const roleId = cfg.verify?.discord?.roleId;
       if (!roleId) {
-        await interaction.editReply("verify.roleId not configured.");
+        await interaction.editReply("verify.discord.roleId not configured.");
         return;
       }
       const mode = interaction.options.getString("mode", true) as
@@ -185,7 +185,7 @@ export const verifyAdmin = {
         );
         return;
       }
-      const verifiedSet = new Set(verified.users.map((u) => u.discord_user_id));
+      const verifiedSet = new Set(verified.users.map((u) => u.platform_user_id));
 
       // Skip the bot itself (defensive; it shouldn't have the holder role
       // but some moderators assign roles oddly).
@@ -333,7 +333,7 @@ export const verifyAdmin = {
           guildId: interaction.guildId,
         });
         const cfg = getProjectConfig();
-        const roleId = cfg.verify?.roleId;
+        const roleId = cfg.verify?.discord?.roleId;
         if (roleId) {
           const r = await applyRoleEvent(interaction.client, {
             guildId: interaction.guildId,

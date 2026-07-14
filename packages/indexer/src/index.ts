@@ -1,12 +1,17 @@
 import { ponder } from "ponder:registry";
-import { saleEvents, wrapEvents, wrapperHoldings } from "ponder:schema";
+import { mintEvents, saleEvents, wrapEvents, wrapperHoldings } from "ponder:schema";
 import {
   ZERO_ADDRESS,
   cursorOf,
   decodeMarketplaceSale,
   loadConfig,
 } from "@abotbasho/shared";
-import type { Address } from "viem";
+import {
+  TransactionReceiptNotFoundError,
+  type Address,
+  type Hash,
+  type TransactionReceipt,
+} from "viem";
 import { getVerificationPool } from "./verification/db.js";
 import { maybeRecomputeForVerification } from "./verification/recompute.js";
 
@@ -47,6 +52,45 @@ const trackWrapperHolding = async ({ event, context }: EventArgs) => {
   }
 };
 
+type ReceiptClient = {
+  getTransactionReceipt: (args: { hash: Hash }) => Promise<TransactionReceipt>;
+};
+
+// dRPC (and other load-balanced RPC endpoints) spread requests across many
+// backend nodes. When a Transfer lands in a fresh tip block, the node that
+// served eth_getLogs can be a block or two ahead of the one that serves the
+// follow-up eth_getTransactionReceipt, which then replies "receipt not found".
+// A null receipt is a *successful* RPC response, so Ponder's network-level
+// retry never kicks in: the error propagates out of the handler, Ponder marks
+// it a fatal indexing error, and the process crash-loops re-processing the same
+// block forever. Retry with capped backoff so the lagging backend can catch up;
+// if the receipt still never shows (persistent lag or a reorged-out tx), skip
+// sale detection for this transfer rather than taking the whole indexer down.
+const RECEIPT_MAX_ATTEMPTS = 6;
+
+const fetchReceipt = async (
+  client: ReceiptClient,
+  hash: Hash,
+): Promise<TransactionReceipt | null> => {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await client.getTransactionReceipt({ hash });
+    } catch (err) {
+      if (!(err instanceof TransactionReceiptNotFoundError)) throw err;
+      if (attempt >= RECEIPT_MAX_ATTEMPTS) {
+        console.warn(
+          `[indexer] receipt for ${hash} still missing after ${attempt} attempts; ` +
+            `skipping sale detection (RPC tip lag or reorged tx)`,
+        );
+        return null;
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(2000, 250 * 2 ** attempt)),
+      );
+    }
+  }
+};
+
 const handleTransfer = async (
   args: EventArgs,
   contractLabel: string,
@@ -69,6 +113,36 @@ const handleTransfer = async (
     });
   }
 
+  // Mints: Transfer from ZERO_ADDRESS on the primary contract. Wrapper mints
+  // are excluded because they're already covered by the Wrapped handler and
+  // posting both would duplicate the feed.
+  if (
+    from === ZERO_ADDRESS &&
+    to !== ZERO_ADDRESS &&
+    contractAddress === cfg.primary.address
+  ) {
+    const blockNumber = event.block.number as bigint;
+    const logIndex = Number(event.log.logIndex);
+    const id = `${blockNumber}-${logIndex}`;
+    // Idempotent insert. On crash recovery or a reorg, Ponder replays handlers
+    // over blocks whose rows may already be committed (an unfinalized row that
+    // its revert didn't remove). The PK is (block, logIndex), unique per log, so
+    // a conflict always means "this exact event was already indexed". Skip it
+    // instead of throwing, which Ponder treats as fatal and crash-loops on.
+    await context.db.insert(mintEvents).values({
+      id,
+      contract: contractLabel,
+      contractAddress,
+      tokenId,
+      minter: to,
+      txHash: event.transaction.hash,
+      blockNumber,
+      logIndex,
+      timestamp: event.block.timestamp as bigint,
+      cursor: cursorOf(blockNumber, logIndex),
+    }).onConflictDoNothing();
+  }
+
   if (from === ZERO_ADDRESS || to === ZERO_ADDRESS) return;
 
   // Skip transfers where the wrapper is one of the parties: those are wraps/unwraps,
@@ -80,9 +154,8 @@ const handleTransfer = async (
     return;
   }
 
-  const receipt = await context.client.getTransactionReceipt({
-    hash: event.transaction.hash,
-  });
+  const receipt = await fetchReceipt(context.client, event.transaction.hash as Hash);
+  if (!receipt) return;
 
   const sale = decodeMarketplaceSale(receipt.logs, contractAddress, tokenId);
   if (!sale) return;
@@ -91,6 +164,8 @@ const handleTransfer = async (
   const logIndex = Number(event.log.logIndex);
   const id = `${blockNumber}-${logIndex}`;
 
+  // Idempotent for the same reason as the mint insert above: a replayed or
+  // reorged block must not crash-loop the indexer on a duplicate PK.
   await context.db.insert(saleEvents).values({
     id,
     contract: contractLabel,
@@ -106,7 +181,7 @@ const handleTransfer = async (
     logIndex,
     timestamp: event.block.timestamp as bigint,
     cursor: cursorOf(blockNumber, logIndex),
-  });
+  }).onConflictDoNothing();
 };
 
 const handleWrap = async (args: EventArgs, kind: "wrap" | "unwrap") => {
@@ -117,6 +192,9 @@ const handleWrap = async (args: EventArgs, kind: "wrap" | "unwrap") => {
   const logIndex = Number(event.log.logIndex);
   const id = `${blockNumber}-${logIndex}`;
 
+  // Idempotent insert: a replayed or reorged block must not crash-loop the
+  // indexer on a duplicate PK. See handleTransfer's mint insert for the full
+  // rationale.
   await context.db.insert(wrapEvents).values({
     id,
     kind,
@@ -127,7 +205,7 @@ const handleWrap = async (args: EventArgs, kind: "wrap" | "unwrap") => {
     logIndex,
     timestamp: event.block.timestamp as bigint,
     cursor: cursorOf(blockNumber, logIndex),
-  });
+  }).onConflictDoNothing();
 };
 
 // Ponder's `ponder.on` is typed against the contract names declared in
