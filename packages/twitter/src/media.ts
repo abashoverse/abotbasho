@@ -1,4 +1,4 @@
-import type { TwitterApi } from "twitter-api-v2";
+import { EUploadMimeType, type TwitterApi } from "twitter-api-v2";
 import { fetchTokenImage, getProjectConfig, type AnyEvent } from "@abotbasho/shared";
 
 const MAX_IMAGE_BYTES = 5_000_000; // Twitter v1.1 media/upload caps at 5MB
@@ -54,7 +54,13 @@ export const uploadTokenMedia = async (
   try {
     const data = await downloadWithLimit(url, MAX_IMAGE_BYTES);
     if (!data) return null;
-    return await twitter.v1.uploadMedia(data.buffer, { mimeType: data.mimeType });
+    // X retired the v1.1 media/upload endpoint (2025-03-31), so v1.uploadMedia
+    // now fails and every sale posts image-less. The v2 chunked media endpoint
+    // is the supported path and works with the same OAuth 1.0a user context.
+    return await twitter.v2.uploadMedia(data.buffer, {
+      media_type: data.mimeType as EUploadMimeType,
+      media_category: "tweet_image",
+    });
   } catch (err) {
     console.warn("[twitter] media upload failed:", err);
     return null;
