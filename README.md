@@ -188,7 +188,7 @@ Resolution order:
 | `PONDER_PORT` | `42069` | Internal indexer port. |
 | `INDEXER_SQL_URL` | `http://localhost:42069/sql` | Where bots reach the indexer. Compose sets it to `http://indexer:42069/sql`. |
 | `ABOTBASHO_CONFIG_PATH` | (unset) | Absolute path override for `abotbasho.config.ts`. |
-| `DISCORD_SALES_CHANNEL_ID`, `DISCORD_WRAPS_CHANNEL_ID`, `DISCORD_UNWRAPS_CHANNEL_ID`, `DISCORD_BLOG_CHANNEL_ID` | `DISCORD_CHANNEL_ID` | Per-event-type channel overrides. |
+| `DISCORD_SALES_CHANNEL_ID`, `DISCORD_MINTS_CHANNEL_ID`, `DISCORD_WRAPS_CHANNEL_ID`, `DISCORD_UNWRAPS_CHANNEL_ID`, `DISCORD_BLOG_CHANNEL_ID` | `DISCORD_CHANNEL_ID` | Per-event-type channel overrides. |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `ponder`, `ponder`, `abotbasho` | Docker compose only. Override to run multiple bots on one host without volume conflicts. |
 
 ## Holder verification
