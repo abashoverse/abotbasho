@@ -21,3 +21,15 @@ COPY packages/ ./packages/
 COPY abotbasho.config.ts ./
 
 EXPOSE 42069
+
+# The indexer runs Ponder, which only supports Node (`engines.node`). In the
+# Bun image, `node` resolves to Bun, so Ponder used to run on Bun without
+# anyone noticing. Same pattern as verify-web: Bun installs, Node runs.
+# Ponder loads the TypeScript sources (its own files, @abotbasho/shared,
+# abotbasho.config.ts) through vite-node, so no build step is needed.
+FROM node:22-alpine AS indexer
+WORKDIR /app
+COPY --from=base /app ./
+WORKDIR /app/packages/indexer
+EXPOSE 42069
+CMD ["node", "/app/node_modules/ponder/dist/esm/bin/ponder.js", "start"]

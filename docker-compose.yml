@@ -15,9 +15,11 @@ services:
     restart: unless-stopped
 
   indexer:
-    build: .
-    image: abotbasho:latest
-    command: bun --filter '@abotbasho/indexer' start
+    # Separate image on Node: Ponder doesn't support Bun. See Dockerfile.
+    build:
+      context: .
+      target: indexer
+    image: abotbasho-indexer:latest
     env_file: .env
     environment:
       - DATABASE_SCHEMA=${POSTGRES_DB:-abotbasho}
@@ -45,7 +47,9 @@ services:
       - abotbasho.autoheal=true
 
   discord:
-    build: .
+    build:
+      context: .
+      target: base
     image: abotbasho:latest
     command: bun --filter '@abotbasho/discord' start
     env_file: .env
@@ -62,7 +66,9 @@ services:
     restart: unless-stopped
 
   twitter:
-    build: .
+    build:
+      context: .
+      target: base
     image: abotbasho:latest
     command: bun --filter '@abotbasho/twitter' start
     env_file: .env
@@ -77,9 +83,11 @@ services:
     restart: unless-stopped
 
   # Optional: Telegram bot. Only needed when abotbasho.config.ts has
-  # verify.telegram configured. Same image as the indexer/discord services.
+  # verify.telegram configured. Same image as the discord/twitter services.
   telegram:
-    build: .
+    build:
+      context: .
+      target: base
     image: abotbasho:latest
     command: bun --filter '@abotbasho/telegram' start
     env_file: .env
