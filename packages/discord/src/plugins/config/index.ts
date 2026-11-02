@@ -23,6 +23,7 @@ import {
   messageKindFor,
 } from "../extensions.js";
 import type { DiscordPlugin } from "../types.js";
+import { embedPayload } from "../../embedImage.js";
 
 const projectMessageFor = (kind: string): string | undefined =>
   (getProjectConfig().messages as Record<string, string | undefined> | undefined)?.[kind];
@@ -129,7 +130,7 @@ const handlePreview = async (interaction: ChatInputCommandInteraction) => {
     return;
   }
   const messages = allMessages();
-  const embed = await handler.buildEmbed(
+  const built = await handler.buildEmbed(
     event,
     env.MAINNET_RPC_URL,
     messageFor(handler.messageKind),
@@ -139,7 +140,7 @@ const handlePreview = async (interaction: ChatInputCommandInteraction) => {
     .join(", ");
   await interaction.editReply({
     content: `Preview using current config (${summary}):`,
-    embeds: [embed],
+    ...embedPayload(built),
   });
 };
 

@@ -101,7 +101,11 @@ export interface AbotbashoConfig {
   messages?: ProjectMessages;
   /** ms between indexer polls. Default 10000. Set to 0 to disable polling. */
   pollIntervalMs?: number;
-  /** IPFS gateway used to resolve token images. Default https://ipfs.io/ipfs/. */
+  /**
+   * IPFS gateway used to resolve token metadata and images. Default
+   * https://ipfs.io/ipfs/, which stopped serving HTTP in Sept 2026. Images
+   * also fall back to the other configured contract, see loadTokenImage.
+   */
   ipfsGateway?: string;
   /**
    * Optional string prepended to the title line of every tweet

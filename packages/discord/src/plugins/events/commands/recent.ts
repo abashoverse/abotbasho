@@ -6,6 +6,7 @@ import { parseEvents, type EventsResponse } from "@abotbasho/shared";
 import { env } from "../../../env.js";
 import { messageFor } from "../../../messages.js";
 import { allEventHandlers, handlerForEvent } from "../../extensions.js";
+import { embedPayload } from "../../../embedImage.js";
 
 const buildData = () => {
   const choices: { name: string; value: string }[] = [
@@ -69,7 +70,7 @@ export const recent = {
       return;
     }
 
-    const embeds = await Promise.all(
+    const built = await Promise.all(
       events.map(async (ev) => {
         const handler = handlerForEvent(ev);
         if (!handler) {
@@ -83,6 +84,6 @@ export const recent = {
       }),
     );
 
-    await interaction.editReply({ embeds });
+    await interaction.editReply(embedPayload(built));
   },
 };

@@ -5,15 +5,16 @@ import {
   ethUsdPrice,
   explorerAddr,
   explorerTx,
-  fetchTokenImage,
   formatAmount,
   formatUsd,
   getProjectConfig,
+  loadTokenImage,
   openseaToken,
   shortAddr,
   weiToUsd,
   type AnyEvent,
 } from "@abotbasho/shared";
+import { withTokenImage, type BuiltEmbed } from "../../../embedImage.js";
 import type { EventHandlerSpec } from "../../extensions.js";
 
 const SALE_COLOR = 0xb56b3a;
@@ -48,7 +49,7 @@ export const buildSaleEmbed = async (
   event: AnyEvent,
   rpcUrl: string,
   customMessage: string | undefined,
-): Promise<EmbedBuilder> => {
+): Promise<BuiltEmbed> => {
   if (event.type !== "sale") {
     throw new Error("buildSaleEmbed called with non-sale event");
   }
@@ -58,7 +59,7 @@ export const buildSaleEmbed = async (
   const [sellerName, buyerName, image, ethUsd] = await Promise.all([
     displayAddress(rpcUrl, event.fromAddress, shortAddr),
     displayAddress(rpcUrl, event.toAddress, shortAddr),
-    fetchTokenImage(rpcUrl, event.contractAddress, event.tokenId),
+    loadTokenImage(rpcUrl, event.tokenId, event.contractAddress),
     ethUsdPrice(),
   ]);
 
@@ -87,8 +88,7 @@ export const buildSaleEmbed = async (
     .setFooter({ text: customMessage ?? projectFooter })
     .setTimestamp(Number(event.timestamp) * 1000);
 
-  if (image) embed.setImage(image);
-  return embed;
+  return withTokenImage(embed, image);
 };
 
 export const saleHandler: EventHandlerSpec = {

@@ -129,7 +129,7 @@ interface AbotbashoConfig {
     unwrap?: string;
   };
   pollIntervalMs?: number; // ms between indexer polls. Default 10000. 0 disables.
-  ipfsGateway?: string;    // default https://ipfs.io/ipfs/
+  ipfsGateway?: string;    // default https://ipfs.io/ipfs/ (retired Sept 2026, set your own)
   tweetPrefix?: string;    // prepended to every tweet's title line. Discord unaffected.
   explorerUrl?: string;    // base URL for tx/address links. Default https://etherscan.io.
   verify?: VerifyConfig;   // see Holder verification below

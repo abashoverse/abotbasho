@@ -8,6 +8,7 @@ import { env } from "../../../env.js";
 import { messageFor } from "../../../messages.js";
 import { channelIdForSlot, resolveChannel } from "../../../channels.js";
 import { allEventHandlers, handlerForEvent } from "../../extensions.js";
+import { embedPayload } from "../../../embedImage.js";
 
 const debuggableHandlers = () => allEventHandlers().filter((h) => h.debugChoice);
 
@@ -70,12 +71,12 @@ export const debug = {
         continue;
       }
       try {
-        const embed = await handler.buildEmbed(
+        const built = await handler.buildEmbed(
           ev,
           env.MAINNET_RPC_URL,
           messageFor(handler.messageKind),
         );
-        await channel.send({ embeds: [embed] });
+        await channel.send(embedPayload(built));
         lines.push(`${label} -> <#${channelId}>`);
       } catch (err) {
         lines.push(`${label} -> <#${channelId}> (${(err as Error).message})`);

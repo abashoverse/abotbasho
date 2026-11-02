@@ -2,7 +2,7 @@ import { TwitterApi } from "twitter-api-v2";
 import { getProjectConfig, type AnyEvent } from "@abotbasho/shared";
 import { env } from "./env.js";
 import { composeTweet } from "./format.js";
-import { tokenImageUrl, uploadTokenMedia } from "./media.js";
+import { tokenImage, uploadTokenMedia } from "./media.js";
 
 const VITALIK = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" as const;
 const NICK = "0x983110309620D911731Ac0932219af06091b6744" as const;
@@ -89,14 +89,16 @@ const twitter = post
   : null;
 
 for (const ev of events) {
-  const [text, imageUrl] = await Promise.all([
+  const [text, image] = await Promise.all([
     composeTweet(ev, env.MAINNET_RPC_URL, messages),
-    tokenImageUrl(ev, env.MAINNET_RPC_URL),
+    tokenImage(ev, env.MAINNET_RPC_URL),
   ]);
   console.log("---");
   console.log(text);
   console.log(`[length: ${text.length} / 280]`);
-  console.log(`[image: ${imageUrl ?? "(none)"}]`);
+  console.log(
+    `[image: ${image ? `${image.fileName} ${image.mimeType} ${image.data.byteLength} bytes` : "(none)"}]`,
+  );
   if (twitter) {
     const mediaId = await uploadTokenMedia(twitter, ev, env.MAINNET_RPC_URL);
     if (mediaId) console.log(`[media uploaded: ${mediaId}]`);

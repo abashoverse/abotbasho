@@ -10,6 +10,7 @@ import { messageFor } from "../../messages.js";
 import { channelIdForSlot, resolveChannel } from "../../channels.js";
 import { handlerForEvent } from "../extensions.js";
 import type { PluginContext } from "../types.js";
+import { embedPayload } from "../../embedImage.js";
 
 let stopFn: (() => void) | null = null;
 
@@ -30,12 +31,12 @@ const onEvent = async (
     return;
   }
   try {
-    const embed = await handler.buildEmbed(
+    const built = await handler.buildEmbed(
       event,
       env.MAINNET_RPC_URL,
       messageFor(handler.messageKind),
     );
-    await channel.send({ embeds: [embed] });
+    await channel.send(embedPayload(built));
     ctx.log(`posted ${event.type} cursor=${event.cursor} -> ${channelId}`);
   } catch (err) {
     ctx.errorLog("post failed:", err);

@@ -4,12 +4,13 @@ import {
   displayNameOf,
   explorerAddr,
   explorerTx,
-  fetchTokenImage,
   getProjectConfig,
+  loadTokenImage,
   openseaToken,
   shortAddr,
   type AnyEvent,
 } from "@abotbasho/shared";
+import { withTokenImage, type BuiltEmbed } from "../../../embedImage.js";
 import type { EventHandlerSpec } from "../../extensions.js";
 
 const MINT_COLOR = 0x4ade80;
@@ -39,7 +40,7 @@ export const buildMintEmbed = async (
   event: AnyEvent,
   rpcUrl: string,
   customMessage: string | undefined,
-): Promise<EmbedBuilder> => {
+): Promise<BuiltEmbed> => {
   if (event.type !== "mint") {
     throw new Error("buildMintEmbed called with non-mint event");
   }
@@ -48,7 +49,7 @@ export const buildMintEmbed = async (
 
   const [minterName, image] = await Promise.all([
     displayAddress(rpcUrl, event.minter, shortAddr),
-    fetchTokenImage(rpcUrl, event.contractAddress, event.tokenId),
+    loadTokenImage(rpcUrl, event.tokenId, event.contractAddress),
   ]);
 
   const displayContract =
@@ -77,8 +78,7 @@ export const buildMintEmbed = async (
     .setFooter({ text: customMessage ?? projectFooter })
     .setTimestamp(Number(event.timestamp) * 1000);
 
-  if (image) embed.setImage(image);
-  return embed;
+  return withTokenImage(embed, image);
 };
 
 export const mintHandler: EventHandlerSpec = {

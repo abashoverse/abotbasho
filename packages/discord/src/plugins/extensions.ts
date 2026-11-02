@@ -1,4 +1,4 @@
-import type { EmbedBuilder } from "discord.js";
+import type { BuiltEmbed } from "../embedImage.js";
 import type { AnyEvent } from "@abotbasho/shared";
 
 export interface ChannelSlotSpec {
@@ -21,7 +21,7 @@ export interface EventHandlerSpec {
     event: AnyEvent,
     rpcUrl: string,
     customMessage: string | undefined,
-  ) => Promise<EmbedBuilder>;
+  ) => Promise<BuiltEmbed>;
   recentChoice?: { name: string; value: string };
   debugChoice?: { name: string; value: string; sample: () => AnyEvent };
 }

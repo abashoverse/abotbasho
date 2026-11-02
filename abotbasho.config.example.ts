@@ -33,9 +33,11 @@ export default defineConfig({
   // ms between indexer polls. Set to 0 to disable polling
   // (useful for slash-command-only debugging). Default 10000.
   // pollIntervalMs: 10000,
-  // Override the IPFS gateway used to resolve token images.
-  // Default https://ipfs.io/ipfs/.
-  // ipfsGateway: "https://w3s.link/ipfs/",
+  // IPFS gateway used to resolve ipfs:// token metadata and images. The
+  // default ipfs.io (and dweb.link, w3s.link) stopped serving HTTP in
+  // Sept 2026. Point this at your own node or a paid gateway if your
+  // collection's art lives on IPFS. On-chain art (data: URIs) needs nothing.
+  // ipfsGateway: "http://ipfs:8080/ipfs/",
   // Prepended to every tweet's title line (e.g. an emoji or short brand mark).
   // Discord is unaffected.
   // tweetPrefix: "",

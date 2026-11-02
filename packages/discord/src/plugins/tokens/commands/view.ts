@@ -7,15 +7,16 @@ import {
   displayAddress,
   displayNameOf,
   explorerAddr,
-  fetchTokenImage,
   formatDuration,
   getProjectConfig,
+  loadTokenImage,
   openseaToken,
   shortAddr,
   tokenOwner,
 } from "@abotbasho/shared";
 import type { Address } from "viem";
 import { env } from "../../../env.js";
+import { embedPayload, withTokenImage } from "../../../embedImage.js";
 
 const BASIC_COLOR = 0xb56b3a;
 const WRAPPED_COLOR = 0x5865f2;
@@ -94,7 +95,7 @@ export const view = {
 
     const [ownerName, image] = await Promise.all([
       displayAddress(env.MAINNET_RPC_URL, owner, shortAddr),
-      fetchTokenImage(env.MAINNET_RPC_URL, cfg.primary.address, tokenId),
+      loadTokenImage(env.MAINNET_RPC_URL, tokenId),
     ]);
 
     const embed = new EmbedBuilder()
@@ -117,8 +118,7 @@ export const view = {
       });
     }
 
-    if (image) embed.setImage(image);
 
-    await interaction.editReply({ embeds: [embed] });
+    await interaction.editReply(embedPayload(withTokenImage(embed, image)));
   },
 };

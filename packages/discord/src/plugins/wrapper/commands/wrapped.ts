@@ -7,15 +7,16 @@ import {
   displayAddress,
   displayNameOf,
   explorerAddr,
-  fetchTokenImage,
   formatDuration,
   getProjectConfig,
+  loadTokenImage,
   openseaToken,
   shortAddr,
   tokenOwner,
 } from "@abotbasho/shared";
 import type { Address } from "viem";
 import { env } from "../../../env.js";
+import { embedPayload, withTokenImage } from "../../../embedImage.js";
 
 const WRAPPED_COLOR = 0x5865f2;
 const UNWRAPPED_COLOR = 0xb56b3a;
@@ -105,7 +106,7 @@ export const wrapped = {
 
     const [info, image] = await Promise.all([
       fetchInfo(tokenId),
-      fetchTokenImage(env.MAINNET_RPC_URL, cfg.primary.address, tokenId),
+      loadTokenImage(env.MAINNET_RPC_URL, tokenId),
     ]);
 
     if (!info) {
@@ -126,8 +127,7 @@ export const wrapped = {
         { name: "Held for", value: info.durationText, inline: true },
       );
 
-    if (image) embed.setImage(image);
 
-    await interaction.editReply({ embeds: [embed] });
+    await interaction.editReply(embedPayload(withTokenImage(embed, image)));
   },
 };

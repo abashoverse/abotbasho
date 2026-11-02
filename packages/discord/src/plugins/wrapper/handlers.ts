@@ -4,12 +4,13 @@ import {
   displayNameOf,
   explorerAddr,
   explorerTx,
-  fetchTokenImage,
   getProjectConfig,
+  loadTokenImage,
   openseaToken,
   shortAddr,
   type AnyEvent,
 } from "@abotbasho/shared";
+import { withTokenImage, type BuiltEmbed } from "../../embedImage.js";
 import type { EventHandlerSpec } from "../extensions.js";
 import { sampleUnwrap, sampleWrap } from "./samples.js";
 
@@ -20,7 +21,7 @@ export const buildWrapEmbed = async (
   event: AnyEvent,
   rpcUrl: string,
   customMessage: string | undefined,
-): Promise<EmbedBuilder> => {
+): Promise<BuiltEmbed> => {
   if (event.type !== "wrap") {
     throw new Error("buildWrapEmbed called with non-wrap event");
   }
@@ -39,7 +40,7 @@ export const buildWrapEmbed = async (
 
   const [ownerName, image] = await Promise.all([
     displayAddress(rpcUrl, event.owner, shortAddr),
-    fetchTokenImage(rpcUrl, cfg.primary.address, event.tokenId),
+    loadTokenImage(rpcUrl, event.tokenId),
   ]);
 
   const embed = new EmbedBuilder()
@@ -53,8 +54,7 @@ export const buildWrapEmbed = async (
     .setFooter({ text: customMessage ?? projectFooter })
     .setTimestamp(Number(event.timestamp) * 1000);
 
-  if (image) embed.setImage(image);
-  return embed;
+  return withTokenImage(embed, image);
 };
 
 export const wrapHandler: EventHandlerSpec = {
