@@ -28,12 +28,21 @@ services:
     volumes:
       - indexer-data:/app/packages/indexer/.ponder
     restart: unless-stopped
+    # Normal steady state is ~450 MB. Without a cap a leak grew it to 4.2 GB,
+    # the event loop stalled for ~100 min (504s on verify links) and the host
+    # OOM killer eventually picked it. With the cap it dies early and
+    # `restart` brings it back in seconds, without starving other containers.
+    mem_limit: 1536m
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:42069/health"]
+      test: ["CMD", "wget", "-qO-", "-T", "5", "http://localhost:42069/health"]
       interval: 30s
-      timeout: 5s
-      retries: 5
+      timeout: 10s
+      retries: 4
       start_period: 90s
+    # Docker never restarts a container just for being unhealthy. The
+    # autoheal service below does, for containers carrying this label.
+    labels:
+      - abotbasho.autoheal=true
 
   discord:
     build: .
@@ -110,6 +119,21 @@ services:
         condition: service_healthy
     restart: unless-stopped
     profiles: ["verify"]
+
+  # Restarts containers labelled `abotbasho.autoheal=true` once their
+  # healthcheck reports unhealthy (indexer: 4 failed checks, ~2 min). The
+  # label is project-specific so other stacks on the same host stay untouched.
+  # Needs the Docker socket, which is root-equivalent on the host. `:ro` does
+  # not restrict API calls, so only run it on hosts you control.
+  autoheal:
+    image: willfarrell/autoheal:1.2.0
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=abotbasho.autoheal
+      - AUTOHEAL_INTERVAL=10
+      - AUTOHEAL_DEFAULT_STOP_TIMEOUT=20
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
 
 volumes:
   indexer-db-data:
