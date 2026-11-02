@@ -52,9 +52,17 @@ const startListener = async (pool: Pool): Promise<void> => {
     }
   });
   client.on("error", (err) => {
+    // pg can emit more than one error for the same dead socket. Only the
+    // first one may release and reconnect, otherwise we'd release twice.
+    if (listenerClient !== client) return;
     console.error("[verify] LISTEN client error; will reconnect:", err);
     listenerClient = null;
     initPromise = null;
+    // A checked-out client that errors is never returned to the pool on its
+    // own. Without this, every DB hiccup permanently ate one of the pool's 5
+    // slots, and once they were gone every /verify query waited forever.
+    // Passing the error makes the pool destroy the client instead of reusing it.
+    client.release(err);
     setTimeout(() => {
       init(pool).catch((e) =>
         console.error("[verify] LISTEN reconnect failed:", e),
