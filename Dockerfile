@@ -1,6 +1,10 @@
 FROM oven/bun:1.1-alpine AS base
 WORKDIR /app
 
+# Fonts for rendering on-chain SVG art to PNG (resvg). Alpine ships none, so
+# any <text> in a token's SVG would silently vanish from the posted image.
+RUN apk add --no-cache font-dejavu
+
 # Workspace metadata first for layer caching
 COPY package.json tsconfig.base.json ./
 COPY packages/shared/package.json ./packages/shared/

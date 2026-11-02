@@ -61,16 +61,28 @@ const parseDataUri = (uri: string): DataUri => {
   const payload = uri.slice(comma + 1);
   const isBase64 = header.endsWith(";base64");
   const mime = (header.split(";")[0] || "text/plain").toLowerCase();
-  const bytes = isBase64
-    ? Buffer.from(payload, "base64")
-    : Buffer.from(decodeURIComponent(payload), "utf8");
-  return { mime, bytes };
+  if (isBase64) return { mime, bytes: Buffer.from(payload, "base64") };
+  // Non-base64 payloads should be percent-encoded, but many contracts embed
+  // raw SVG or JSON (`data:image/svg+xml;utf8,<svg ...>`). A bare `%` like
+  // `width="100%"` then makes decodeURIComponent throw. Use the text as-is.
+  let text: string;
+  try {
+    text = decodeURIComponent(payload);
+  } catch {
+    text = payload;
+  }
+  return { mime, bytes: Buffer.from(text, "utf8") };
 };
 
 interface TokenMetadata {
   image?: string;
   image_url?: string;
+  /** Raw SVG markup, OpenSea's field for on-chain art. */
+  image_data?: string;
 }
+
+const svgDataUri = (svg: string): string =>
+  `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
 
 const FETCH_TIMEOUT_MS = 10_000;
 const FETCH_ATTEMPTS = 2;
@@ -111,9 +123,53 @@ const readLimited = async (res: Response): Promise<Buffer> => {
 // Neither Discord embeds nor X accept SVG, so on-chain SVG art is rendered
 // to PNG here. The SVG's own size is ignored in favour of a fixed width, which
 // keeps pixel art (16x16 viewBox) crisp instead of a tiny thumbnail.
+//
+// Fonts: the Docker image ships DejaVu (see Dockerfile). Unknown families fall
+// back to `defaultFontFamily`. Generic keywords need help, though: resvg-js
+// 2.6.2 accepts `serifFamily` / `monospaceFamily` but ignores them, so
+// `monospace` text came out proportional, breaking ASCII-art alignment. We
+// rewrite the keywords to concrete DejaVu names before rendering instead.
+const GENERIC_FAMILIES: Record<string, string> = {
+  "sans-serif": "DejaVu Sans",
+  serif: "DejaVu Serif",
+  monospace: "DejaVu Sans Mono",
+};
+
+// Map each comma-separated entry that is exactly a generic keyword. Named
+// families like "Noto Serif" are left alone. Names go in unquoted (valid CSS
+// for multi-word names) so the result is safe inside either attribute quote.
+const pinFamilyList = (list: string): string =>
+  list
+    .split(",")
+    .map((part) => {
+      const name = part.trim();
+      const pinned = GENERIC_FAMILIES[name.toLowerCase()];
+      return pinned ? part.replace(name, pinned) : part;
+    })
+    .join(",");
+
+// Covers the font-family attribute and the font-family CSS property (in
+// <style> or style=""). The CSS `font:` shorthand isn't handled because
+// resvg ignores that shorthand entirely, family and size alike.
+export const pinGenericFonts = (svg: string): string =>
+  svg
+    .replace(
+      /(font-family\s*=\s*)(["'])(.*?)\2/gi,
+      (_, pre: string, q: string, v: string) => `${pre}${q}${pinFamilyList(v)}${q}`,
+    )
+    .replace(
+      /(font-family\s*:\s*)([^;}"<]+)/gi,
+      (_, pre: string, v: string) => `${pre}${pinFamilyList(v)}`,
+    );
+
 const svgToPng = (svg: Buffer): Buffer =>
   Buffer.from(
-    new Resvg(svg, { fitTo: { mode: "width", value: RENDER_WIDTH_PX } }).render().asPng(),
+    new Resvg(pinGenericFonts(svg.toString("utf8")), {
+      fitTo: { mode: "width", value: RENDER_WIDTH_PX },
+      font: { loadSystemFonts: true, defaultFontFamily: "DejaVu Sans" },
+    })
+      .render()
+      .asPng(),
   );
 
 const RASTER_EXT: Record<TokenImage["mimeType"], string> = {
@@ -178,8 +234,16 @@ const imageSourceFor = async (
     functionName: "tokenURI",
     args: [tokenId],
   });
+  // Some contracts skip the JSON and return the image itself from tokenURI.
+  if (rawUri.startsWith("data:image/")) {
+    cacheSource(key, rawUri);
+    return rawUri;
+  }
   const metadata = await readMetadata(rawUri);
-  const source = metadata.image ?? metadata.image_url ?? null;
+  const source =
+    metadata.image ||
+    metadata.image_url ||
+    (metadata.image_data ? svgDataUri(metadata.image_data) : null);
   cacheSource(key, source);
   return source;
 };
